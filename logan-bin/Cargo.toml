@@ -1,0 +1,18 @@
+[package]
+name = "logan-bin"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+logan-common = { path = "../logan-common" }
+logan-protocol = { path = "../logan-protocol" }
+logan-storage = { path = "../logan-storage" }
+logan-client = { path = "../logan-client" }
+logan-server = { path = "../logan-server" }
+anyhow = "1.0.81"
+clap = { version = "4.5.4", features = ["derive"] }
+dashmap = "5.5.3"
+tokio = { version = "1.0", features = ["full"] }
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["time", "env-filter"] }
