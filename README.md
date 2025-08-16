@@ -57,7 +57,7 @@ cargo test -p logan-protocol
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are NOT welcome at this point! We'll open up contributions once we have reached a certain milestone.
 
 ## License
 
