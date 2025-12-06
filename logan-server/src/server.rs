@@ -8,14 +8,11 @@ use tracing::{error, info, warn};
 
 use crate::dispatch::dispatch;
 use crate::error::ServerError;
-use logan_protocol::messages::CreatableTopic;
-use dashmap::DashMap;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use anyhow::Result;
-
-/// In-memory message store for each topic and partition
-pub type TopicMessageStore = DashMap<String, DashMap<i32, Mutex<Vec<u8>>>>;
+use dashmap::DashMap;
+use logan_protocol::messages::CreatableTopic;
+use logan_storage::LogManager;
+use std::sync::Arc;
 
 /// Main server type for the Logan Kafka broker
 #[derive(Debug)]
@@ -29,8 +26,8 @@ pub struct Server {
     shutdown_tx: broadcast::Sender<()>,
     /// Shared topic state
     topics: Arc<DashMap<String, CreatableTopic>>,
-    /// In-memory message store
-    messages: Arc<TopicMessageStore>,
+    /// Log Manager
+    log_manager: Arc<LogManager>,
 }
 
 impl Server {
@@ -39,6 +36,7 @@ impl Server {
         listener: TcpListener,
         max_connections: usize,
         topics: Arc<DashMap<String, CreatableTopic>>,
+        log_manager: Arc<LogManager>,
     ) -> (Self, broadcast::Sender<()>) {
         let (shutdown_tx, _shutdown_rx) = broadcast::channel(1);
 
@@ -48,7 +46,7 @@ impl Server {
                 max_connections,
                 topics,
                 shutdown_tx: shutdown_tx.clone(),
-                messages: Arc::new(DashMap::new()),
+                log_manager,
             },
             shutdown_tx,
         )
@@ -79,9 +77,9 @@ impl Server {
                             info!("Accepted connection #{}: {}", connection_count, addr);
 
                             let topics = Arc::clone(&self.topics);
-                            let messages = Arc::clone(&self.messages);
+                            let log_manager = Arc::clone(&self.log_manager);
                             tokio::spawn(async move {
-                                handle_connection(stream, addr, topics, messages).await;
+                                handle_connection(stream, addr, topics, log_manager).await;
                             });
                         }
                         Err(e) => {
@@ -104,10 +102,10 @@ async fn handle_connection(
     mut stream: tokio::net::TcpStream,
     addr: SocketAddr,
     topics: Arc<DashMap<String, CreatableTopic>>,
-    messages: Arc<TopicMessageStore>,
+    log_manager: Arc<LogManager>,
 ) {
     loop {
-        match dispatch(&mut stream, topics.clone(), messages.clone()).await {
+        match dispatch(&mut stream, topics.clone(), log_manager.clone()).await {
             Ok(true) => {
                 // Keep connection open
             }

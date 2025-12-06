@@ -1,5 +1,4 @@
 use crate::error::ServerError;
-use crate::server::TopicMessageStore;
 use anyhow::Result;
 use bytes::{BufMut, BytesMut};
 use dashmap::DashMap;
@@ -8,6 +7,7 @@ use logan_protocol::codec::{Decodable, Encodable};
 use logan_protocol::error_codes::ErrorCode;
 use logan_protocol::messages::*;
 use logan_protocol::primitives::{KafkaArray, KafkaString, NullableBytes};
+use logan_storage::LogManager;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -38,7 +38,7 @@ impl Encodable for ResponseBody {
 pub(crate) async fn dispatch(
     stream: &mut TcpStream,
     topics: Arc<DashMap<String, CreatableTopic>>,
-    messages: Arc<TopicMessageStore>,
+    log_manager: Arc<LogManager>,
 ) -> Result<bool, ServerError> {
     let mut len_buf = [0u8; 4];
     if stream.read_exact(&mut len_buf).await.is_err() {
@@ -73,11 +73,11 @@ pub(crate) async fn dispatch(
         }
         ApiKey::Produce => {
             let request = ProduceRequest::decode(&mut request_buf)?;
-            handle_produce_request(request, messages).await
+            handle_produce_request(request, log_manager).await
         }
         ApiKey::Fetch => {
             let request = FetchRequest::decode(&mut request_buf)?;
-            handle_fetch_request(request, messages).await
+            handle_fetch_request(request, log_manager).await
         }
         _ => {
             warn!("Unsupported API key: {:?}", header.api_key);
@@ -172,13 +172,13 @@ fn handle_create_topics_request(
         });
     }
 
-    let response = CreateTopicsResponse { topic_errors: KafkaArray(topic_errors) };
+    let response = CreateTopicsResponse {
+        topic_errors: KafkaArray(topic_errors),
+    };
     Ok(ResponseBody::CreateTopics(response))
 }
 
-fn handle_list_offsets_request(
-    _request: &ListOffsetsRequest,
-) -> Result<ResponseBody, ServerError> {
+fn handle_list_offsets_request(_request: &ListOffsetsRequest) -> Result<ResponseBody, ServerError> {
     // Simplified response for now
     let response = ListOffsetsResponse {
         throttle_time_ms: 0,
@@ -189,7 +189,7 @@ fn handle_list_offsets_request(
 
 async fn handle_produce_request(
     request: ProduceRequest,
-    messages: Arc<TopicMessageStore>,
+    log_manager: Arc<LogManager>,
 ) -> Result<ResponseBody, ServerError> {
     let mut topic_responses = vec![];
 
@@ -197,19 +197,31 @@ async fn handle_produce_request(
         let topic_name = topic_data.name.0.clone();
         let mut partition_responses = vec![];
 
-        let topic_storage = messages.entry(topic_name.clone()).or_default();
-
         for partition_data in topic_data.partition_data.0 {
             let partition_index = partition_data.index;
-            let partition_storage = topic_storage.entry(partition_index).or_default();
-            let mut records = partition_storage.lock().await;
+            let log_result = log_manager.get_or_create_log(&topic_name, partition_index);
 
-            let base_offset = records.len() as i64;
-            records.extend_from_slice(&partition_data.record_set.0);
+            let (error_code, base_offset) = match log_result {
+                Ok(log) => {
+                    let mut log = log.lock().expect("Log lock poisoned");
+                    // Write bytes directly
+                    match log.append(&partition_data.record_set.0) {
+                        Ok(offset) => (ErrorCode::None, offset as i64),
+                        Err(e) => {
+                            warn!("Error appending to log: {}", e);
+                            (ErrorCode::UnknownServerError, -1)
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Error getting log: {}", e);
+                    (ErrorCode::UnknownTopicOrPartition, -1)
+                }
+            };
 
             partition_responses.push(PartitionProduceResponse {
                 index: partition_index,
-                error_code: ErrorCode::None,
+                error_code,
                 base_offset,
             });
         }
@@ -220,13 +232,15 @@ async fn handle_produce_request(
         });
     }
 
-    let response = ProduceResponse { responses: KafkaArray(topic_responses) };
+    let response = ProduceResponse {
+        responses: KafkaArray(topic_responses),
+    };
     Ok(ResponseBody::Produce(response))
 }
 
 async fn handle_fetch_request(
     request: FetchRequest,
-    messages: Arc<TopicMessageStore>,
+    log_manager: Arc<LogManager>,
 ) -> Result<ResponseBody, ServerError> {
     let mut topic_responses = vec![];
 
@@ -237,18 +251,26 @@ async fn handle_fetch_request(
         for fetch_partition in fetch_topic.partitions.0 {
             let partition_index = fetch_partition.partition_index;
             let mut records = None;
-            let error_code = if let Some(partitions) = messages.get(&topic_name) {
-                if let Some(messages) = partitions.get(&partition_index) {
-                    let locked_messages = messages.lock().await;
-                    let mut records_buf = BytesMut::with_capacity(locked_messages.len());
-                    records_buf.extend_from_slice(&locked_messages);
-                    records = Some(NullableBytes(Some(records_buf.freeze())));
-                    ErrorCode::None
-                } else {
-                    ErrorCode::UnknownTopicOrPartition
+            let error_code = match log_manager.get_or_create_log(&topic_name, partition_index) {
+                Ok(log) => {
+                    let mut log = log.lock().expect("Log lock poisoned");
+                    // Read directly from Log
+                    match log.read(
+                        fetch_partition.fetch_offset as u64,
+                        fetch_partition.max_bytes,
+                    ) {
+                        Ok(data) => {
+                            let buf = BytesMut::from(data.as_slice());
+                            records = Some(NullableBytes(Some(buf.freeze())));
+                            ErrorCode::None
+                        }
+                        Err(e) => {
+                            warn!("Error reading from log: {}", e);
+                            ErrorCode::UnknownServerError
+                        }
+                    }
                 }
-            } else {
-                ErrorCode::UnknownTopicOrPartition
+                Err(_) => ErrorCode::UnknownTopicOrPartition,
             };
 
             partition_responses.push(PartitionData {
@@ -265,17 +287,18 @@ async fn handle_fetch_request(
         });
     }
 
-    let response = FetchResponse { responses: KafkaArray(topic_responses) };
+    let response = FetchResponse {
+        responses: KafkaArray(topic_responses),
+    };
     Ok(ResponseBody::Fetch(response))
 }
 
-fn encode_response(
-    header: &RequestHeader,
-    body: &ResponseBody,
-) -> anyhow::Result<BytesMut> {
+fn encode_response(header: &RequestHeader, body: &ResponseBody) -> anyhow::Result<BytesMut> {
     let mut buf = BytesMut::new();
 
-    let response_header = ResponseHeader { correlation_id: header.correlation_id };
+    let response_header = ResponseHeader {
+        correlation_id: header.correlation_id,
+    };
     response_header.encode(&mut buf)?;
     body.encode(&mut buf)?;
 

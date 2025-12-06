@@ -1,64 +1,77 @@
-# Logan - A Kafka-compatible Message Broker in Rust
-## EARLY STAGE WIP, NOT READY FOR USAGE
+# Logan - High-Performance Distributed Message Broker
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Build Status](https://github.com/AnuragAmbuj/logan/actions/workflows/rust.yml/badge.svg)](https://github.com/yourusername/logan/actions)
+[![Build Status](https://github.com/AnuragAmbuj/logan/actions/workflows/rust.yml/badge.svg)](https://github.com/AnuragAmbuj/logan/actions)
 [![Documentation](https://docs.rs/logan/badge.svg)](https://docs.rs/logan)
 
-Logan is a high-performance, Kafka-compatible message broker implemented in Rust, focusing on efficiency, reliability, and ease of use.
+Logan is a cloud-native, distributed streaming platform implemented in Rust. It mimics the Kafka protocol to provide a high-throughput, low-latency, and durable message broker that is compatible with existing Kafka clients.
 
-## Project Structure
+**⚠️ Status: Active Development (Pre-Alpha)**
+Logan is currently in the early stages of development. While it supports basic production, consumption, and persistence, it is not yet feature-complete for production environments.
 
-The project is organized as a Cargo workspace with the following crates:
+👉 **[View Implementation Plan & Roadmap](./PLAN.md)**
 
-- `logan-bin`: Binary entry point for the broker
-- `logan-protocol`: Core protocol definitions and serialization/deserialization
-- `logan-storage`: Persistent storage engine for messages and metadata
-- `logan-server`: Network server implementation
-- `logan-client`: Client library for interacting with the broker
-- `logan-common`: Shared utilities and types
+## 🚀 Key Features (Current & Planned)
 
-## Getting Started
+-   **Kafka Protocol Compatible**: Works with standard Kafka clients.
+-   **High Performance**: Thread-per-core architecture using `tokio`.
+-   **Durable Storage**: Disk-based persistence with sparse indexing.
+-   **Zero Dependencies**: No Zookeeper required (Planned KRaft implementation).
+-   **Written in Rust**: Memory safety and performance without garbage collection.
+
+## 📂 Project Structure
+
+-   `logan-bin`: The server binary.
+-   `logan-server`: Network layer and request dispatching.
+-   `logan-storage`: High-performance, append-only storage engine.
+-   `logan-protocol`: Kafka wire protocol implementation.
+-   `logan-client`: Async Rust client library.
+
+## 🏁 Getting Started
 
 ### Prerequisites
+-   Rust (stable)
 
-- Rust (latest stable version)
-- Cargo
-
-### Building
+### Running the Broker
 
 ```bash
-# Build all crates
-cargo build --release
-
-# Build and run the broker
-cargo run -p logan-bin
+# Start the broker (defaults to port 9092, logs in /tmp/logan-logs)
+cargo run --release -p logan-bin
 ```
 
-## Development
-
-### Adding a New Crate
-
-To add a new crate to the workspace:
-
-1. Create a new directory in the workspace root
-2. Initialize a new library crate: `cargo init --lib`
-3. Add the crate to the workspace members in `Cargo.toml`
+To specify a custom log directory:
+```bash
+cargo run --release -p logan-bin -- --log-dir ./data/raft-logs
+```
 
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run unit and integration tests
 cargo test --workspace
-
-# Test a specific crate
-cargo test -p logan-protocol
 ```
 
-## Contributing
+## 🗺 Roadmap
 
-Contributions are NOT welcome at this point! We'll open up contributions once we have reached a certain milestone.
+We are currently in **Phase 1: Foundation & Reliability**.
+
+1.  **Prototype Phase** (Completed) ✅
+    -   Basic networking, storage, and protocol parsing.
+2.  **Phase 1: Foundation** (In Progress) 🚧
+    -   Data integrity check (CRC32), rigorous testing, and retention policies.
+3.  **Phase 2: Performance**
+    -   Zero-copy networking, batching, and compression.
+4.  **Phase 3: Compatibility**
+    -   Consumer groups and offset management.
+5.  **Phase 4: Clustering**
+    -   Raft-based consensus and replication.
+
+See [PLAN.md](./PLAN.md) for the detailed checklist.
+
+## 🤝 Contributing
+
+We welcome interest in the project! Please check the [Implementation Plan](./PLAN.md) to see where you can help.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT

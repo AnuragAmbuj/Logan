@@ -1,14 +1,11 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+pub mod index;
+pub mod log;
+pub mod manager;
+pub mod segment;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+mod index_prop_test;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use index::Index;
+pub use log::Log;
+pub use manager::LogManager;
+pub use segment::LogSegment;
