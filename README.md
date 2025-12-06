@@ -79,7 +79,7 @@ You can also use AI to contribute to the project.
 <u>In case you wish to use AI to contribute to the project</u>
 - Please use Claude 4.5 Opus, Gemini 3.0 Pro or any other LLM to generate clean code.
 - Stick to implementation plan and checklist.
-- Use a Markdown file to document your changes. Commit the changes to the repository.
+- Use md file/s to document your changes and commit the changes to the repository.
 - Do not generate code for any other purpose.
 - Make sure that the test cases are passing
 - Do not modify existing test cases without permission. Add you own test cases for your changes.
