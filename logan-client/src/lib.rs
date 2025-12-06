@@ -1,11 +1,11 @@
 use anyhow::Result;
 use bytes::{Bytes, BytesMut};
 use logan_protocol::{
+    RequestHeader, ResponseHeader,
     api_keys::ApiKey,
     codec::{Decodable, Encodable},
     messages::*,
     primitives::{KafkaArray, KafkaBool, KafkaBytes, KafkaString, NullableString},
-    RequestHeader, ResponseHeader,
 };
 use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -22,7 +22,10 @@ impl Client {
     pub async fn connect(addr: SocketAddr) -> Result<Self> {
         let stream = TcpStream::connect(addr).await?;
         info!("Connected to server at {}", addr);
-        Ok(Self { stream, correlation_id: 0 })
+        Ok(Self {
+            stream,
+            correlation_id: 0,
+        })
     }
 
     pub async fn create_topics(&mut self, topics: Vec<String>) -> Result<CreateTopicsResponse> {
@@ -47,9 +50,21 @@ impl Client {
         self.send_request(ApiKey::CreateTopics, 0, request).await
     }
 
+    pub async fn delete_topics(&mut self, topics: Vec<String>) -> Result<DeleteTopicsResponse> {
+        info!("Sending DeleteTopics request...");
+
+        let request = DeleteTopicsRequest {
+            topics: KafkaArray(topics.into_iter().map(KafkaString).collect()),
+            timeout_ms: 5000,
+        };
+
+        self.send_request(ApiKey::DeleteTopics, 0, request).await
+    }
+
     pub async fn send_api_versions_request(&mut self) -> Result<ApiVersionsResponse> {
         info!("Sending ApiVersions request...");
-        self.send_request(ApiKey::ApiVersions, 0, ApiVersionsRequest).await
+        self.send_request(ApiKey::ApiVersions, 0, ApiVersionsRequest)
+            .await
     }
 
     pub async fn send_metadata_request(&mut self) -> Result<MetadataResponse> {
@@ -174,9 +189,8 @@ mod tests {
 
         // 3. Send a request
         let request = ApiVersionsRequest {};
-        let response: ApiVersionsResponse = client
-            .send_request(ApiKey::ApiVersions, 0, request)
-            .await?;
+        let response: ApiVersionsResponse =
+            client.send_request(ApiKey::ApiVersions, 0, request).await?;
 
         assert_eq!(response.error_code, 0);
         assert!(!response.api_versions.0.is_empty());

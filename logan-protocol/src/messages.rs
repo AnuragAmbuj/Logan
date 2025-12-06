@@ -3,11 +3,11 @@
 use anyhow::Result;
 use bytes::{Buf, BufMut};
 
+use crate::error_codes::ErrorCode;
 use crate::primitives::{
     KafkaArray, KafkaBool, KafkaBytes, KafkaString, NullableBytes, NullableString,
 };
 use crate::{ApiKey, Decodable, Encodable};
-use crate::error_codes::ErrorCode;
 
 /// A Kafka protocol request header
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
@@ -452,7 +452,10 @@ impl Decodable for ReplicaAssignment {
     fn decode(buf: &mut impl Buf) -> Result<Self> {
         let partition_index = i32::decode(buf)?;
         let broker_ids = KafkaArray::<i32>::decode(buf)?;
-        Ok(Self { partition_index, broker_ids })
+        Ok(Self {
+            partition_index,
+            broker_ids,
+        })
     }
 }
 
@@ -467,7 +470,10 @@ impl Decodable for ConfigEntry {
     fn decode(buf: &mut impl Buf) -> Result<Self> {
         let config_name = KafkaString::decode(buf)?;
         let config_value = NullableString::decode(buf)?;
-        Ok(Self { config_name, config_value })
+        Ok(Self {
+            config_name,
+            config_value,
+        })
     }
 }
 
@@ -496,6 +502,52 @@ impl Decodable for TopicError {
         let topic = KafkaString::decode(buf)?;
         let error_code = ErrorCode::decode(buf)?;
         Ok(Self { topic, error_code })
+    }
+}
+
+/// DeleteTopics Request (v0+)
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct DeleteTopicsRequest {
+    /// The topics to delete.
+    pub topics: KafkaArray<KafkaString>,
+    /// The timeout in milliseconds for the request.
+    pub timeout_ms: i32,
+}
+
+/// DeleteTopics Response (v0+)
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct DeleteTopicsResponse {
+    /// The results for each topic.
+    pub topic_errors: KafkaArray<TopicError>,
+}
+
+impl Encodable for DeleteTopicsRequest {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
+        self.topics.encode(buf)?;
+        self.timeout_ms.encode(buf)
+    }
+}
+
+impl Decodable for DeleteTopicsRequest {
+    fn decode(buf: &mut impl Buf) -> Result<Self> {
+        let topics = KafkaArray::<KafkaString>::decode(buf)?;
+        let timeout_ms = i32::decode(buf)?;
+        Ok(Self { topics, timeout_ms })
+    }
+}
+
+impl Encodable for DeleteTopicsResponse {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
+        self.topic_errors.encode(buf)
+    }
+}
+
+impl Decodable for DeleteTopicsResponse {
+    fn decode(buf: &mut impl Buf) -> Result<Self> {
+        let topic_errors = KafkaArray::<TopicError>::decode(buf)?;
+        Ok(Self { topic_errors })
     }
 }
 
@@ -578,7 +630,10 @@ impl Decodable for TopicProduceData {
     fn decode(buf: &mut impl Buf) -> Result<Self> {
         let name = KafkaString::decode(buf)?;
         let partition_data = KafkaArray::<PartitionProduceData>::decode(buf)?;
-        Ok(Self { name, partition_data })
+        Ok(Self {
+            name,
+            partition_data,
+        })
     }
 }
 
@@ -624,7 +679,10 @@ impl Decodable for TopicProduceResponse {
     fn decode(buf: &mut impl Buf) -> Result<Self> {
         let name = KafkaString::decode(buf)?;
         let partition_responses = KafkaArray::<PartitionProduceResponse>::decode(buf)?;
-        Ok(Self { name, partition_responses })
+        Ok(Self {
+            name,
+            partition_responses,
+        })
     }
 }
 
@@ -744,7 +802,10 @@ impl Decodable for ListOffsetsPartition {
     fn decode(buf: &mut impl Buf) -> Result<Self> {
         let partition_index = i32::decode(buf)?;
         let timestamp = i64::decode(buf)?;
-        Ok(Self { partition_index, timestamp })
+        Ok(Self {
+            partition_index,
+            timestamp,
+        })
     }
 }
 
@@ -894,7 +955,11 @@ impl Decodable for FetchPartition {
         let partition_index = i32::decode(buf)?;
         let fetch_offset = i64::decode(buf)?;
         let max_bytes = i32::decode(buf)?;
-        Ok(Self { partition_index, fetch_offset, max_bytes })
+        Ok(Self {
+            partition_index,
+            fetch_offset,
+            max_bytes,
+        })
     }
 }
 
@@ -941,6 +1006,11 @@ impl Decodable for PartitionData {
         let error_code = i16::decode(buf)?;
         let high_watermark = i64::decode(buf)?;
         let records = NullableBytes::decode(buf)?;
-        Ok(Self { partition_index, error_code, high_watermark, records })
+        Ok(Self {
+            partition_index,
+            error_code,
+            high_watermark,
+            records,
+        })
     }
 }

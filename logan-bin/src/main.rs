@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Initialize logging
-    init_logging(args.log_level);
+    logan_common::logging::init_logging(args.log_level);
 
     info!("Starting Logan Kafka broker...");
     info!("Binding to {}", args.bind);
@@ -62,24 +62,4 @@ async fn main() -> Result<()> {
     info!("Server shutting down");
 
     Ok(())
-}
-
-fn init_logging(level: Level) {
-    use tracing_subscriber::fmt;
-    use tracing_subscriber::prelude::*;
-
-    // Configure the formatter
-    let formatting_layer = fmt::layer()
-        .with_ansi(true)
-        .with_level(true)
-        .with_timer(fmt::time::UtcTime::rfc_3339())
-        .with_writer(std::io::stderr);
-
-    // Set up the subscriber with the specified log level
-    let filter_layer = tracing_subscriber::filter::LevelFilter::from_level(level);
-
-    tracing_subscriber::registry()
-        .with(formatting_layer)
-        .with(filter_layer)
-        .init();
 }

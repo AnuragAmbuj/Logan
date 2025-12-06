@@ -10,6 +10,7 @@
 
 pub mod error;
 pub mod error_code;
+pub mod logging;
 
 /// Re-export commonly used items
 pub use error::{Error, Result};
@@ -85,13 +86,16 @@ pub type BoxResult<T> = Result<Box<T>>;
 pub type BoxDynErrorResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 /// A type alias for boxed dynamic error results with a static lifetime
-pub type BoxDynErrorStaticResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
+pub type BoxDynErrorStaticResult<T> =
+    std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
 /// A type alias for boxed dynamic error results with a static lifetime and send + sync
-pub type BoxDynErrorSendSyncResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
+pub type BoxDynErrorSendSyncResult<T> =
+    std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
 /// A type alias for boxed dynamic error results with a static lifetime and send + sync + 'static
-pub type BoxDynErrorSendSyncStaticResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
+pub type BoxDynErrorSendSyncStaticResult<T> =
+    std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
 #[cfg(test)]
 mod tests {
@@ -102,7 +106,7 @@ mod tests {
         let io_error = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
         let error: Error = io_error.into();
         assert!(matches!(error, Error::Io(_)));
-        
+
         let json_error: Error = serde_json::from_str::<i32>("invalid").unwrap_err().into();
         assert!(matches!(json_error, Error::Serialization(_)));
     }

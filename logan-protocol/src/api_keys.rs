@@ -39,8 +39,7 @@ impl Encodable for ApiKey {
 impl Decodable for ApiKey {
     fn decode(buf: &mut impl bytes::Buf) -> Result<Self> {
         let key = i16::decode(buf)?;
-        num_traits::FromPrimitive::from_i16(key).ok_or_else(|| {
-            anyhow::anyhow!("Unknown API key: {}", key)
-        })
+        num_traits::FromPrimitive::from_i16(key)
+            .ok_or_else(|| anyhow::anyhow!("Unknown API key: {}", key))
     }
 }
