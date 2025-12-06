@@ -11,7 +11,7 @@ Logan is currently in the early stages of development. While it supports basic p
 
 👉 **[View Implementation Plan & Roadmap](./PLAN.md)**
 
-## 🚀 Key Features (Current & Planned)
+## Key Features (Current & Planned)
 
 -   **Kafka Protocol Compatible**: Works with standard Kafka clients.
 -   **High Performance**: Thread-per-core architecture using `tokio`.
@@ -19,7 +19,7 @@ Logan is currently in the early stages of development. While it supports basic p
 -   **Zero Dependencies**: No Zookeeper required (Planned KRaft implementation).
 -   **Written in Rust**: Memory safety and performance without garbage collection.
 
-## 📂 Project Structure
+## Project Structure
 
 -   `logan-bin`: The server binary.
 -   `logan-server`: Network layer and request dispatching.
@@ -27,7 +27,7 @@ Logan is currently in the early stages of development. While it supports basic p
 -   `logan-protocol`: Kafka wire protocol implementation.
 -   `logan-client`: Async Rust client library.
 
-## 🏁 Getting Started
+## Getting Started
 
 ### Prerequisites
 -   Rust (stable)
@@ -51,26 +51,31 @@ cargo run --release -p logan-bin -- --log-dir ./data/raft-logs
 cargo test --workspace
 ```
 
-## 🗺 Roadmap
+## Roadmap
 
 We are currently in **Phase 1: Foundation & Reliability**.
 
 1.  **Prototype Phase** (Completed) ✅
     -   Basic networking, storage, and protocol parsing.
-2.  **Phase 1: Foundation** (In Progress) 🚧
-    -   Data integrity check (CRC32), rigorous testing, and retention policies.
-3.  **Phase 2: Performance**
-    -   Zero-copy networking, batching, and compression.
-4.  **Phase 3: Compatibility**
-    -   Consumer groups and offset management.
-5.  **Phase 4: Clustering**
-    -   Raft-based consensus and replication.
+60: 2.  **Phase 1: Foundation** (In Progress) 🚧
+61:     -   Data integrity check (CRC32), rigorous testing, and retention policies.
+62: 3.  **Phase 2: Performance**
+63:     -   Zero-copy networking, batching, and compression.
+64: 4.  **Phase 3: Client & Protocol Expansion** (Completed) ✅
+65:     -   Expanded protocol (DeleteTopics), implemented CLI client, and enhanced common utilities.
+66: 5.  **Phase 4: Compatibility**
+67:     -   Consumer groups, offset management, and verification with external clients.
+68: 6.  **Phase 5: Clustering**
+69:     -   Raft-based consensus and replication.
 
 See [PLAN.md](./PLAN.md) for the detailed checklist.
 
 ## 🤝 Contributing
 
 We welcome interest in the project! Please check the [Implementation Plan](./PLAN.md) to see where you can help.
+You can also use AI to contribute to the project. Please do not expect to get paid for it.
+
+In case you want to use AI to contribute to the project, please 
 
 ## License
 
