@@ -57,25 +57,34 @@ We are currently in **Phase 1: Foundation & Reliability**.
 
 1.  **Prototype Phase** (Completed) ✅
     -   Basic networking, storage, and protocol parsing.
-60: 2.  **Phase 1: Foundation** (In Progress) 🚧
-61:     -   Data integrity check (CRC32), rigorous testing, and retention policies.
-62: 3.  **Phase 2: Performance**
-63:     -   Zero-copy networking, batching, and compression.
-64: 4.  **Phase 3: Client & Protocol Expansion** (Completed) ✅
-65:     -   Expanded protocol (DeleteTopics), implemented CLI client, and enhanced common utilities.
-66: 5.  **Phase 4: Compatibility**
-67:     -   Consumer groups, offset management, and verification with external clients.
-68: 6.  **Phase 5: Clustering**
-69:     -   Raft-based consensus and replication.
+2.  **Phase 1: Foundation** (In Progress) 🚧
+    -   Data integrity check (CRC32), rigorous testing, and retention policies.
+3.  **Phase 2: Performance**
+    -   Zero-copy networking, batching, and compression.
+4.  **Phase 3: Client & Protocol Expansion** (Completed) ✅
+    -   Expanded protocol (DeleteTopics), implemented CLI client, and enhanced common utilities.
+5.  **Phase 4: Compatibility**
+    -   Consumer groups, offset management, and verification with external clients.
+6.  **Phase 5: Clustering**
+    -   Raft-based consensus and replication.
 
 See [PLAN.md](./PLAN.md) for the detailed checklist.
 
 ## 🤝 Contributing
 
 We welcome interest in the project! Please check the [Implementation Plan](./PLAN.md) to see where you can help.
-You can also use AI to contribute to the project. Please do not expect to get paid for it.
 
-In case you want to use AI to contribute to the project, please 
+You can also use AI to contribute to the project.
+
+<u>In case you wish to use AI to contribute to the project</u>
+- Please use Claude 4.5 Opus, Gemini 3.0 Pro or any other LLM to generate clean code.
+- Stick to implementation plan and checklist.
+- Use a Markdown file to document your changes. Commit the changes to the repository.
+- Do not generate code for any other purpose.
+- Make sure that the test cases are passing
+- Do not modify existing test cases without permission. Add you own test cases for your changes.
+
+While we welcome your contribution, please do not expect to get paid for it.
 
 ## License
 
