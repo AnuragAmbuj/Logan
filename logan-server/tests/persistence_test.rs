@@ -3,7 +3,7 @@ use dashmap::DashMap;
 use logan_client::Client;
 use logan_protocol::messages::CreatableTopic;
 use logan_server::server::Server;
-use logan_storage::LogManager;
+use logan_server::shard::ShardManager;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
@@ -18,8 +18,13 @@ async fn start_server(
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let local_addr = listener.local_addr()?;
     let topics = Arc::new(DashMap::<String, CreatableTopic>::new());
-    let log_manager = Arc::new(LogManager::new(log_dir)?);
-    let (server, shutdown_tx) = Server::new(listener, 100, topics, log_manager);
+
+    // Initialize ShardManager
+    let config = logan_storage::config::LogConfig::default();
+    let num_shards = 2; // Use 2 shards for testing
+    let shard_manager = Arc::new(ShardManager::new(log_dir, config, num_shards).await?);
+
+    let (server, shutdown_tx) = Server::new(listener, 100, topics, shard_manager);
 
     let handle = tokio::spawn(async move {
         if let Err(e) = server.run().await {

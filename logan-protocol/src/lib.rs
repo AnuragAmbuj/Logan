@@ -1,7 +1,9 @@
 //! A crate containing all the shared Kafka protocol definitions.
 
 pub mod api_keys;
+pub mod batch;
 pub mod codec;
+pub mod compression;
 pub mod error_codes;
 pub mod messages;
 pub mod primitives;

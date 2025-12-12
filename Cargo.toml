@@ -1,11 +1,11 @@
 [workspace]
-members = [
+members = ["logan-bench",
     "logan-bin",
     "logan-client",
     "logan-common",
     "logan-protocol",
     "logan-server",
-    "logan-storage",
+    "logan-storage", "logan-tpc",
 ]
 resolver = "2"
 

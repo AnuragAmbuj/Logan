@@ -22,6 +22,7 @@ impl Client {
     pub async fn connect(addr: SocketAddr) -> Result<Self> {
         let stream = TcpStream::connect(addr).await?;
         info!("Connected to server at {}", addr);
+        stream.set_nodelay(true)?;
         Ok(Self {
             stream,
             correlation_id: 0,
@@ -162,6 +163,7 @@ mod tests {
     use super::*;
     use dashmap::DashMap;
     use logan_server::server::Server;
+    use logan_server::shard::ShardManager;
     use std::net::SocketAddr;
     use std::sync::Arc;
     use tokio::net::TcpListener;
@@ -170,10 +172,25 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
         let topics = Arc::new(DashMap::new());
-        let (server, _shutdown_tx) = Server::new(listener, 10, topics);
+        let temp_dir = tempfile::tempdir()?;
+
+        let config = logan_storage::config::LogConfig::default();
+        let shard_manager = Arc::new(
+            ShardManager::new(
+                temp_dir.path().to_path_buf(),
+                config,
+                1, // 1 shard for test
+            )
+            .await?,
+        );
+
+        let (server, _shutdown_tx) = Server::new(listener, 10, topics, shard_manager);
 
         tokio::spawn(async move {
-            server.run().await.unwrap();
+            if let Err(e) = server.run().await {
+                // Ignore shutdown errors in tests
+                eprintln!("Test server ended: {}", e);
+            }
         });
 
         Ok(addr)

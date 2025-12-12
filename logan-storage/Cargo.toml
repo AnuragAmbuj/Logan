@@ -5,7 +5,9 @@ edition.workspace = true
 
 [dependencies]
 anyhow = "1.0.100"
+crc32fast = "1.5.0"
 dashmap = "6.1.0"
+tracing = "0.1.43"
 
 [dev-dependencies]
 proptest = "1.9.0"

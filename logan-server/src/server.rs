@@ -8,10 +8,10 @@ use tracing::{error, info, warn};
 
 use crate::dispatch::dispatch;
 use crate::error::ServerError;
+use crate::shard::ShardManager;
 use anyhow::Result;
 use dashmap::DashMap;
 use logan_protocol::messages::CreatableTopic;
-use logan_storage::LogManager;
 use std::sync::Arc;
 
 /// Main server type for the Logan Kafka broker
@@ -26,8 +26,8 @@ pub struct Server {
     shutdown_tx: broadcast::Sender<()>,
     /// Shared topic state
     topics: Arc<DashMap<String, CreatableTopic>>,
-    /// Log Manager
-    log_manager: Arc<LogManager>,
+    /// Shard Manager (Core-Local Partitioning)
+    shard_manager: Arc<ShardManager>,
 }
 
 impl Server {
@@ -36,7 +36,7 @@ impl Server {
         listener: TcpListener,
         max_connections: usize,
         topics: Arc<DashMap<String, CreatableTopic>>,
-        log_manager: Arc<LogManager>,
+        shard_manager: Arc<ShardManager>,
     ) -> (Self, broadcast::Sender<()>) {
         let (shutdown_tx, _shutdown_rx) = broadcast::channel(1);
 
@@ -46,7 +46,7 @@ impl Server {
                 max_connections,
                 topics,
                 shutdown_tx: shutdown_tx.clone(),
-                log_manager,
+                shard_manager,
             },
             shutdown_tx,
         )
@@ -64,6 +64,10 @@ impl Server {
         let mut connection_count = 0;
         let mut shutdown_rx = self.shutdown_tx.subscribe();
 
+        // Cleaner Task is TODO for ShardManager (shards should manage their own retention)
+        // For now, we omit the global cleaner task as it relied on LogManager::cleanup().
+        // Shards should self-clean or accept a Clean command.
+
         loop {
             tokio::select! {
                 result = self.listener.accept() => {
@@ -75,11 +79,14 @@ impl Server {
                             }
                             connection_count += 1;
                             info!("Accepted connection #{}: {}", connection_count, addr);
+                            if let Err(e) = stream.set_nodelay(true) {
+                                warn!("Failed to set TCP_NODELAY: {}", e);
+                            }
 
                             let topics = Arc::clone(&self.topics);
-                            let log_manager = Arc::clone(&self.log_manager);
+                            let shard_manager = Arc::clone(&self.shard_manager);
                             tokio::spawn(async move {
-                                handle_connection(stream, addr, topics, log_manager).await;
+                                handle_connection(stream, addr, topics, shard_manager).await;
                             });
                         }
                         Err(e) => {
@@ -102,10 +109,10 @@ async fn handle_connection(
     mut stream: tokio::net::TcpStream,
     addr: SocketAddr,
     topics: Arc<DashMap<String, CreatableTopic>>,
-    log_manager: Arc<LogManager>,
+    shard_manager: Arc<ShardManager>,
 ) {
     loop {
-        match dispatch(&mut stream, topics.clone(), log_manager.clone()).await {
+        match dispatch(&mut stream, topics.clone(), shard_manager.clone()).await {
             Ok(true) => {
                 // Keep connection open
             }

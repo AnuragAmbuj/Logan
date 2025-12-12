@@ -20,21 +20,21 @@ This document outlines the detailed plan to evolve Logan from a prototype into a
 ### 1.1 Robust Testing
 - [x] **Property-Based Tests**: Verify `Index` and `LogSegment` correctness with randomized inputs (`proptest`).
 - [ ] **Fuzz Testing**: Fuzz the protocol decoder to ensure resilience against malformed packets.
-- [ ] **Integration Tests**: Simulate crash-recovery loops.
+- [x] **Integration Tests**: Simulate crash-recovery loops (Partially covered by `persistence_test`).
 
 ### 1.2 Data Integrity
-- [ ] **CRC32 Validation**:
-    - [ ] Add CRC32 checksum to record headers.
-    - [ ] Validate checksum on read.
-    - [ ] Implement a "background scrubber" thread to detect bit rot.
+- [x] **CRC32 Validation**:
+    - [x] Add CRC32 checksum to record headers.
+    - [x] Validate checksum on read.
+    - [x] Implement a "background scrubber" thread (Included in retention cleanup).
 - [ ] **Fsync Policies**:
     - [ ] Implement configurable flush policies (`flush.messages`, `flush.ms`).
 
 ### 1.3 Storage Features
-- [ ] **Retention Policies**:
-    - [ ] Implement time-based retention (`log.retention.hours`).
-    - [ ] Implement size-based retention (`log.retention.bytes`).
-    - [ ] Implement segment deletion scheduler.
+- [x] **Retention Policies**:
+    - [x] Implement time-based retention (`log.retention.hours`).
+    - [x] Implement size-based retention (`log.retention.bytes`).
+    - [x] Implement segment deletion scheduler.
 - [ ] **Compaction**:
     - [ ] Implement key-based log compaction for state stores.
 
@@ -43,8 +43,8 @@ This document outlines the detailed plan to evolve Logan from a prototype into a
 ## 🚀 Phase 2: Performance
 **Goal:** Optimize throughput and latency for high-volume workloads.
 
-### 2.1 zero-Copy Networking
-- [ ] **Sendfile**: Use `tokio::fs` or `nix::sys::sendfile` to transfer data directly from page cache to socket.
+### 2.1 Zero-Copy Networking
+- [x] **Sendfile**: Use `tokio::fs` or `nix::sys::sendfile` to transfer data directly from page cache to socket.
 - [ ] **Buffer Management**: Minimize allocations during request parsing.
 
 ### 2.2 Batching & Compression
@@ -53,6 +53,13 @@ This document outlines the detailed plan to evolve Logan from a prototype into a
     - [ ] Snappy
     - [ ] LZ4
     - [ ] Zstd
+
+### 2.3 Advanced Architecture (NUMA/Thread-per-Core)
+**Note**: This involves a significant architectural shift from "Work Stealing" (Tokio) to "Thread-per-Core" (e.g., `glommio`/`monoio`) similar to Redpanda/Seastar.
+- [ ] **Architecture Study**: Evaluate `glommio` vs `tokio-uring` vs standard `tokio` with pinning.
+- [ ] **Core Sharding**: Shard `LogManager` so partitions are owned by specific cores (Shared-Nothing).
+- [ ] **Message Passing**: Implement inter-core channels for cross-partition requests to replace Mutexes.
+- [ ] **Thread Pinning**: Pin runtime threads to physical cores to maximize L1/L2 cache hits and reduce context switches.
 
 ---
 

@@ -1,15 +1,18 @@
 use crate::error::ServerError;
+use crate::shard::ShardManager;
 use anyhow::Result;
 use bytes::{BufMut, BytesMut};
 use dashmap::DashMap;
 use logan_protocol::api_keys::ApiKey;
+use logan_protocol::batch::RecordBatch;
 use logan_protocol::codec::{Decodable, Encodable};
 use logan_protocol::error_codes::ErrorCode;
 use logan_protocol::messages::*;
-use logan_protocol::primitives::{KafkaArray, KafkaString, NullableBytes};
-use logan_storage::LogManager;
+use logan_protocol::primitives::{KafkaArray, NullableBytes};
+use logan_storage::LogReadResult;
+use std::fs::File as StdFile;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tracing::{info, warn};
 
@@ -38,7 +41,7 @@ impl Encodable for ResponseBody {
 pub(crate) async fn dispatch(
     stream: &mut TcpStream,
     topics: Arc<DashMap<String, CreatableTopic>>,
-    log_manager: Arc<LogManager>,
+    shard_manager: Arc<ShardManager>,
 ) -> Result<bool, ServerError> {
     let mut len_buf = [0u8; 4];
     if stream.read_exact(&mut len_buf).await.is_err() {
@@ -53,6 +56,11 @@ pub(crate) async fn dispatch(
 
     let header = RequestHeader::decode(&mut request_buf)?;
     info!("Received request: {:?}", header);
+
+    if header.api_key == ApiKey::Fetch {
+        let request = FetchRequest::decode(&mut request_buf)?;
+        return handle_fetch_zerocopy(stream, &header, request, shard_manager).await;
+    }
 
     let response_body = match header.api_key {
         ApiKey::ApiVersions => {
@@ -73,12 +81,10 @@ pub(crate) async fn dispatch(
         }
         ApiKey::Produce => {
             let request = ProduceRequest::decode(&mut request_buf)?;
-            handle_produce_request(request, log_manager).await
+            handle_produce_request(request, shard_manager).await
         }
-        ApiKey::Fetch => {
-            let request = FetchRequest::decode(&mut request_buf)?;
-            handle_fetch_request(request, log_manager).await
-        }
+        // Fetch is handled above
+        ApiKey::Fetch => unreachable!(),
         _ => {
             warn!("Unsupported API key: {:?}", header.api_key);
             return Ok(true); // Keep connection open
@@ -87,6 +93,123 @@ pub(crate) async fn dispatch(
 
     let response_bytes = encode_response(&header, &response_body)?;
     stream.write_all(&response_bytes).await?;
+    Ok(true)
+}
+
+enum ZeroCopyPart {
+    Bytes(BytesMut),
+    File {
+        file: StdFile,
+        offset: u64,
+        len: u64,
+    },
+}
+
+async fn handle_fetch_zerocopy(
+    stream: &mut TcpStream,
+    header: &RequestHeader,
+    request: FetchRequest,
+    shard_manager: Arc<ShardManager>,
+) -> Result<bool, ServerError> {
+    let mut parts: Vec<ZeroCopyPart> = Vec::new();
+    let mut current_buf = BytesMut::new();
+
+    // 1. Encode Response Header
+    let response_header = ResponseHeader {
+        correlation_id: header.correlation_id,
+    };
+    response_header.encode(&mut current_buf)?;
+
+    // 2. FetchResponse Body
+    // Topics Array Length
+    (request.topics.0.len() as i32).encode(&mut current_buf)?;
+
+    for fetch_topic in request.topics.0 {
+        // Topic Name
+        fetch_topic.topic.encode(&mut current_buf)?;
+
+        // Partitions Array Length
+        (fetch_topic.partitions.0.len() as i32).encode(&mut current_buf)?;
+
+        for fetch_partition in fetch_topic.partitions.0 {
+            // Partition Index
+            fetch_partition.partition_index.encode(&mut current_buf)?;
+
+            let log_result = shard_manager
+                .fetch(
+                    fetch_topic.topic.0.clone(),
+                    fetch_partition.partition_index,
+                    fetch_partition.fetch_offset as u64,
+                    fetch_partition.max_bytes,
+                )
+                .await;
+
+            match log_result {
+                Ok(read_result) => {
+                    (ErrorCode::None as i16).encode(&mut current_buf)?; // ErrorCode
+                    (0i64).encode(&mut current_buf)?; // HighWatermark
+
+                    match read_result {
+                        LogReadResult::Data(data) => {
+                            // Record Set (NullableBytes)
+                            (data.len() as i32).encode(&mut current_buf)?;
+                            current_buf.put_slice(&data);
+                        }
+                        LogReadResult::FileSlice { file, offset, len } => {
+                            // Record Set Length
+                            (len as i32).encode(&mut current_buf)?;
+
+                            // Flush current_buf to parts
+                            parts.push(ZeroCopyPart::Bytes(current_buf.split()));
+                            // current_buf is now empty/new
+
+                            parts.push(ZeroCopyPart::File { file, offset, len });
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Error reading log: {}", e);
+                    (ErrorCode::UnknownServerError as i16).encode(&mut current_buf)?;
+                    (0i64).encode(&mut current_buf)?; // HW
+                    // Empty records
+                    NullableBytes(None).encode(&mut current_buf)?;
+                }
+            }
+        }
+    }
+
+    // Push remaining buffer
+    if !current_buf.is_empty() {
+        parts.push(ZeroCopyPart::Bytes(current_buf));
+    }
+
+    // Calculate total length (Packet Frame)
+    let total_len: usize = parts
+        .iter()
+        .map(|p| match p {
+            ZeroCopyPart::Bytes(b) => b.len(),
+            ZeroCopyPart::File { len, .. } => *len as usize,
+        })
+        .sum();
+
+    // Write Packet Length (4 bytes)
+    let mut len_buf = [0u8; 4];
+    len_buf.copy_from_slice(&(total_len as i32).to_be_bytes());
+    stream.write_all(&len_buf).await?;
+
+    // Write Parts
+    for part in parts {
+        match part {
+            ZeroCopyPart::Bytes(b) => stream.write_all(&b).await?,
+            ZeroCopyPart::File { file, offset, len } => {
+                let mut tokio_file = tokio::fs::File::from_std(file);
+                tokio_file.seek(tokio::io::SeekFrom::Start(offset)).await?;
+                let mut handle = tokio_file.take(len);
+                tokio::io::copy(&mut handle, stream).await?;
+            }
+        }
+    }
+
     Ok(true)
 }
 
@@ -189,7 +312,7 @@ fn handle_list_offsets_request(_request: &ListOffsetsRequest) -> Result<Response
 
 async fn handle_produce_request(
     request: ProduceRequest,
-    log_manager: Arc<LogManager>,
+    shard_manager: Arc<ShardManager>,
 ) -> Result<ResponseBody, ServerError> {
     let mut topic_responses = vec![];
 
@@ -199,23 +322,37 @@ async fn handle_produce_request(
 
         for partition_data in topic_data.partition_data.0 {
             let partition_index = partition_data.index;
-            let log_result = log_manager.get_or_create_log(&topic_name, partition_index);
 
-            let (error_code, base_offset) = match log_result {
-                Ok(log) => {
-                    let mut log = log.lock().expect("Log lock poisoned");
-                    // Write bytes directly
-                    match log.append(&partition_data.record_set.0) {
-                        Ok(offset) => (ErrorCode::None, offset as i64),
-                        Err(e) => {
-                            warn!("Error appending to log: {}", e);
-                            (ErrorCode::UnknownServerError, -1)
-                        }
+            // Helper to check valid batch
+            let mut payload = partition_data.record_set.0.clone(); // Clone for validation, cheap for Bytes
+            if !payload.is_empty() {
+                match RecordBatch::decode(&mut payload) {
+                    Ok(batch) => {
+                        info!(
+                            "Received valid RecordBatch: base_offset={}, records={}",
+                            batch.base_offset,
+                            batch.records.len()
+                        );
+                    }
+                    Err(e) => {
+                        warn!("Produce payload is not a valid v2 RecordBatch: {}", e);
                     }
                 }
+            }
+
+            let append_result = shard_manager
+                .append(
+                    topic_name.clone(),
+                    partition_index,
+                    partition_data.record_set.0.clone().into(),
+                )
+                .await;
+
+            let (error_code, base_offset) = match append_result {
+                Ok(offset) => (ErrorCode::None, offset as i64),
                 Err(e) => {
-                    warn!("Error getting log: {}", e);
-                    (ErrorCode::UnknownTopicOrPartition, -1)
+                    warn!("Error appending to shard: {}", e);
+                    (ErrorCode::UnknownServerError, -1)
                 }
             };
 
@@ -236,61 +373,6 @@ async fn handle_produce_request(
         responses: KafkaArray(topic_responses),
     };
     Ok(ResponseBody::Produce(response))
-}
-
-async fn handle_fetch_request(
-    request: FetchRequest,
-    log_manager: Arc<LogManager>,
-) -> Result<ResponseBody, ServerError> {
-    let mut topic_responses = vec![];
-
-    for fetch_topic in request.topics.0 {
-        let mut partition_responses = vec![];
-        let topic_name = fetch_topic.topic.0.clone();
-
-        for fetch_partition in fetch_topic.partitions.0 {
-            let partition_index = fetch_partition.partition_index;
-            let mut records = None;
-            let error_code = match log_manager.get_or_create_log(&topic_name, partition_index) {
-                Ok(log) => {
-                    let mut log = log.lock().expect("Log lock poisoned");
-                    // Read directly from Log
-                    match log.read(
-                        fetch_partition.fetch_offset as u64,
-                        fetch_partition.max_bytes,
-                    ) {
-                        Ok(data) => {
-                            let buf = BytesMut::from(data.as_slice());
-                            records = Some(NullableBytes(Some(buf.freeze())));
-                            ErrorCode::None
-                        }
-                        Err(e) => {
-                            warn!("Error reading from log: {}", e);
-                            ErrorCode::UnknownServerError
-                        }
-                    }
-                }
-                Err(_) => ErrorCode::UnknownTopicOrPartition,
-            };
-
-            partition_responses.push(PartitionData {
-                partition_index,
-                error_code: error_code as i16,
-                high_watermark: 0, // Not implemented
-                records: records.unwrap_or_default(),
-            });
-        }
-
-        topic_responses.push(FetchableTopicResponse {
-            topic: KafkaString(topic_name),
-            partitions: KafkaArray(partition_responses),
-        });
-    }
-
-    let response = FetchResponse {
-        responses: KafkaArray(topic_responses),
-    };
-    Ok(ResponseBody::Fetch(response))
 }
 
 fn encode_response(header: &RequestHeader, body: &ResponseBody) -> anyhow::Result<BytesMut> {

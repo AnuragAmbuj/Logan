@@ -31,6 +31,8 @@ The storage engine provides persistent, append-only logs for topic partitions.
 -   **`Log`**: Represents a partition. Contains an ordered list of `LogSegment`.
 -   **`LogSegment`**: A specific slice of the log (e.g., offsets 0-1000). Rolling is largely TODO but architectural hooks exist.
     -   `.log` file: Append-only storage of raw bytes.
+        -   **Format**: Series of `Record` structures.
+        -   `Record`: `[Length: 4 bytes (BE)] [CRC32: 4 bytes (BE)] [Payload: N bytes]`
     -   `.index` file: Sparse index mapping logical offsets to physical file headers (~4KB intervals usually, currently 1:1 for prototype).
 
 ### 4. Client Library (`logan-client`)
@@ -55,6 +57,6 @@ The storage engine provides persistent, append-only logs for topic partitions.
 1.  Client sends `FetchRequest` (Topic, Partition, Offset).
 2.  `LogManager` locates `Log`.
 3.  `Log` performs binary search on `Index` to find physical position.
-4.  `LogSegment` reads bytes from `.log` file starting at position.
-5.  `Server` wraps bytes in `FetchResponse` (zero-copy todo).
+4.  `LogSegment` identifies file slice (offset, length).
+5.  `Server` uses `sendfile` (via `tokio::io::copy`) to stream data directly from disk to socket (Zero-Copy).
 

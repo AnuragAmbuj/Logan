@@ -3,7 +3,7 @@ use clap::Parser;
 use dashmap::DashMap;
 use logan_protocol::messages::CreatableTopic;
 use logan_server::server::Server;
-use logan_storage::LogManager;
+use logan_server::shard::ShardManager;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -29,6 +29,18 @@ struct Args {
     /// Directory for log storage
     #[arg(long, default_value = "/tmp/logan-logs")]
     log_dir: PathBuf,
+
+    /// Log retention bytes (default: unlimited)
+    #[arg(long)]
+    retention_bytes: Option<u64>,
+
+    /// Log retention hours (default: unlimited)
+    #[arg(long)]
+    retention_hours: Option<u64>,
+
+    /// Number of shards (default: number of CPUs)
+    #[arg(long)]
+    shards: Option<usize>,
 }
 
 #[tokio::main]
@@ -44,12 +56,30 @@ async fn main() -> Result<()> {
     info!("Max connections: {}", args.max_connections);
     info!("Log directory: {:?}", args.log_dir);
 
+    let config = logan_storage::config::LogConfig {
+        retention_bytes: args.retention_bytes,
+        retention_ms: args.retention_hours.map(|h| h * 60 * 60 * 1000),
+    };
+
+    let num_shards = args.shards.unwrap_or_else(num_cpus::get);
+    info!("Initializing ShardManager with {} shards", num_shards);
+
     // Create and start the server
     let topics = Arc::new(DashMap::<String, CreatableTopic>::new());
-    let log_manager = Arc::new(LogManager::new(args.log_dir)?);
+
+    // ShardManager::new is async because it spawns threads/tasks.
+    // Wait, let's check my ShardManager::new signature in shard.rs.
+    // It returns Result<Self>.
+    let shard_manager = Arc::new(ShardManager::new(args.log_dir, config, num_shards).await?);
+
     let listener = TcpListener::bind(args.bind).await?;
-    let (server, _shutdown_sender) =
-        Server::new(listener, args.max_connections, topics.clone(), log_manager);
+
+    let (server, _shutdown_sender) = Server::new(
+        listener,
+        args.max_connections,
+        topics.clone(),
+        shard_manager,
+    );
 
     let server_handle = tokio::spawn(async move {
         if let Err(e) = server.run().await {

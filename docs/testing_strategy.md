@@ -5,6 +5,7 @@
 
 -   **Protocol Fuzzing:** Use `proptest` to generate random Kafka protocol frames and ensure `decode(encode(x)) == x`.
 -   **Index Logic:** Verify binary search boundary conditions (empty index, single item, exact match, non-exact match).
+-   **Record Fuzzing:** Use `proptest` to verify `Record` serialization and resilience to corruption (CRC32).
 
 ## 2. Integration Testing
 **Scope:** Interaction between `logan-server`, `logan-storage` and `logan-client`.
@@ -31,6 +32,6 @@
 
 | Priority | Test Type | Description |
 | :--- | :--- | :--- |
-| High | Unit | Add `proptest` for `Index` and `LogSegment` logic. |
+| Done | Unit | Add `proptest` for `Index` and `LogSegment` logic. |
 | High | Integration | Add `concurrent_produce_fetch` test. |
 | Medium | System | Verify compatibility with a standard Python `kafka-python` client. |
