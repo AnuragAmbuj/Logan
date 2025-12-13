@@ -11,13 +11,13 @@ use logan_protocol::error_codes::ErrorCode;
 use logan_protocol::messages::{
     ApiVersionResponse, ApiVersionV3, ApiVersionsRequest, ApiVersionsResponse,
     ApiVersionsResponseV3, BrokerV0, CreatableTopic, CreateTopicsRequest, CreateTopicsResponse,
-    DeleteTopicsRequest, DeleteTopicsResponse, ListOffsetsRequest, ListOffsetsResponse,
-    MetadataRequest, MetadataResponse, OffsetCommitPartition, OffsetCommitPartitionResponse,
-    OffsetCommitRequest, OffsetCommitResponse, OffsetCommitTopic, OffsetCommitTopicResponse,
-    OffsetFetchPartitionResponse, OffsetFetchRequest, OffsetFetchResponse, OffsetFetchTopic,
-    OffsetFetchTopicResponse, PartitionProduceResponse, ProduceRequest, ProduceResponse,
-    RequestHeader, ResponseHeader, ResponseHeaderFlexible, TopicError, TopicMetadata,
-    TopicProduceResponse,
+    DeleteTopicsRequest, DeleteTopicsResponse, FetchRequest, ListOffsetsRequest,
+    ListOffsetsResponse, MetadataRequest, MetadataResponse, OffsetCommitPartition,
+    OffsetCommitPartitionResponse, OffsetCommitRequest, OffsetCommitResponse, OffsetCommitTopic,
+    OffsetCommitTopicResponse, OffsetFetchPartitionResponse, OffsetFetchRequest,
+    OffsetFetchResponse, OffsetFetchTopic, OffsetFetchTopicResponse, PartitionProduceResponse,
+    ProduceRequest, ProduceResponse, RequestHeader, ResponseHeader, ResponseHeaderFlexible,
+    TopicError, TopicMetadata, TopicProduceResponse,
 };
 use logan_protocol::primitives::{
     CompactArray, KafkaArray, KafkaString, NullableBytes, TaggedFields,

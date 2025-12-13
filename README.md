@@ -1,30 +1,37 @@
 # Logan
 
-Logan is a high-performance, distributed streaming platform written in Rust, designed to be compatible with the Apache Kafka® protocol. It focuses on experimental high-performance architecture (Thread-per-Core, Zero-Copy I/O) while maintaining compatibility with standard Kafka clients.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
+
+**Status: Implementation Phase (Experimental)**
+
+Logan is a high-performance, distributed streaming platform written in Rust, designed to be compatible with the Apache Kafka protocol. It focuses on experimental high-performance architecture (Thread-per-Core, Zero-Copy I/O) while maintaining compatibility with standard Kafka clients.
 
 ## Features
 
-### 🚀 Performance
+### Performance
 - **Core-Local Partitioning**: Implements a Shared-Nothing Actor model to eliminate lock contention on hot partitions.
 - **Zero-Copy Networking**: Uses `sendfile` (on Linux) for high-throughput `Fetch` responses, bypassing user-space copying.
 - **Batching & Compression**: Support for Kafka v2 `RecordBatch` format with `Snappy` and `LZ4` compression.
 - **TCP_NODELAY**: Optimized for low-latency delivery.
 
-### 🛡️ Reliability
+### Reliability
 - **CRC32 Data Integrity**: All log records are protected by CRC32 checksums, validated on read.
 - **Configurable Retention**: Policy-based log cleanup by time (hours) or size (bytes).
 - **WAL-based Storage**: Durable append-only log segments.
+- **Log Compaction**: Basic support for log cleaning and compaction strategies.
 
-### 🔌 Compatibility
+### Compatibility
 - **Kafka Protocol Support**: Compatible with standard Kafka clients like `kcat` (librdkafka) and `kafka-python`.
 - **Supported APIs**: 
     - `ApiVersions` (v0-v3)
     - `Metadata` (v0)
     - `Produce` (v2)
     - `Fetch` (v0)
-    - `OffsetCommit` (v0-v2) *[In-Memory]*
-    - `OffsetFetch` (v0-v1) *[In-Memory]*
+    - `OffsetCommit` (v2)
+    - `OffsetFetch` (v1)
     - `CreateTopics`
+    - `DeleteTopics`
 
 ## Architecture
 
@@ -50,7 +57,7 @@ cargo build --release
 cargo run --release -p logan-bin -- --bind 0.0.0.0:9093 --log-level info
 ```
 
-### Using with `kcat`
+### Using with kcat
 ```bash
 # List Metadata
 kcat -b localhost:9093 -L
