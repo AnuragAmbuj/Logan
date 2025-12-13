@@ -73,7 +73,6 @@ impl Client {
 
         let request = MetadataRequest {
             topics: KafkaArray(vec![]),
-            allow_auto_topic_creation: KafkaBool(true),
         };
 
         self.send_request(ApiKey::Metadata, 0, request).await
@@ -162,6 +161,7 @@ impl Client {
 mod tests {
     use super::*;
     use dashmap::DashMap;
+    use logan_server::offset_manager::OffsetManager;
     use logan_server::server::Server;
     use logan_server::shard::ShardManager;
     use std::net::SocketAddr;
@@ -184,7 +184,9 @@ mod tests {
             .await?,
         );
 
-        let (server, _shutdown_tx) = Server::new(listener, 10, topics, shard_manager);
+        let offset_manager = Arc::new(OffsetManager::new());
+        let (server, _shutdown_tx) =
+            Server::new(listener, 10, topics, shard_manager, offset_manager);
 
         tokio::spawn(async move {
             if let Err(e) = server.run().await {

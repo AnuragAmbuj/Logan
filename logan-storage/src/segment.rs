@@ -22,6 +22,16 @@ impl LogSegment {
         let dir = dir.as_ref();
         let log_path = dir.join(format!("{:020}.log", base_offset));
         let index_path = dir.join(format!("{:020}.index", base_offset));
+        Self::new_custom(log_path, index_path, base_offset)
+    }
+
+    pub fn new_custom(
+        log_path: impl AsRef<Path>,
+        index_path: impl AsRef<Path>,
+        base_offset: u64,
+    ) -> Result<Self> {
+        let log_path = log_path.as_ref().to_path_buf();
+        let index_path = index_path.as_ref().to_path_buf();
 
         let file = OpenOptions::new()
             .read(true)
@@ -136,5 +146,23 @@ impl LogSegment {
         std::fs::remove_file(&self.log_path).context("Failed to delete log file")?;
         std::fs::remove_file(&self.index_path).context("Failed to delete index file")?;
         Ok(())
+    }
+
+    pub fn index(&self) -> &Index {
+        &self.index
+    }
+
+    pub fn read_record_at_position(&mut self, position: u64) -> Result<Vec<u8>> {
+        self.log_file.seek(SeekFrom::Start(position))?;
+        let record = crate::record::Record::decode(&mut self.log_file)?;
+        Ok(record.payload)
+    }
+
+    pub fn log_path(&self) -> &Path {
+        &self.log_path
+    }
+
+    pub fn index_path(&self) -> &Path {
+        &self.index_path
     }
 }

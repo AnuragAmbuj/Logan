@@ -35,6 +35,15 @@ The storage engine provides persistent, append-only logs for topic partitions.
         -   `Record`: `[Length: 4 bytes (BE)] [CRC32: 4 bytes (BE)] [Payload: N bytes]`
     -   `.index` file: Sparse index mapping logical offsets to physical file headers (~4KB intervals usually, currently 1:1 for prototype).
 
+#### **Compaction & Cleanup**
+-   **`CleanupPolicy`**: Configurable per topic (or global default).
+    -   `Delete`: Discards old segments based on `retention.bytes` or `retention.ms`.
+    -   `Compact`: Triggers the `LogCleaner`.
+-   **`LogCleaner`**: A background process (invoked manually or periodically) that:
+    1.  Builds an `OffsetMap` of relevant keys.
+    2.  Rewrites closed segments to remove obsolete records.
+    3.  Preserves original offsets to maintain consumer consistency.
+
 ### 4. Client Library (`logan-client`)
 -   A thin async wrapper around the TCP protocol.
 -   Provides high-level methods: `produce`, `fetch`, `create_topics`.

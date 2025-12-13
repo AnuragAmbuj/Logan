@@ -1,3 +1,4 @@
+pub mod cleaner;
 pub mod config;
 pub mod index;
 pub mod log;

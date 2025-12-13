@@ -108,4 +108,21 @@ We added `logan-protocol/src/batch.rs` to handle the complex Kafka v2 `RecordBat
 -   **LZ4**: Extremely fast decompression.
 -   **Zstd**: Best compression ratio (future proofing).
 
-This allows Logan to store data more densely and saturates the disk bandwidth more effectively.
+
+---
+
+## Chapter 5: Cleaning House (Log Compaction)
+
+As we moved towards supporting stateful applications (like KTables or database changelogs), we faced a new problem. Sometimes, you don't care about the *history* of a key, but only its *latest value*.
+
+### The Challenge
+Infinite retention consumes infinite disk. Deleting old segments based on time (Retention) loses the latest state if the key hasn't been updated recently. We needed **Log Compaction**.
+
+### The Solution: `LogCleaner`
+
+We implemented a mechanism to "rewrite" history.
+1.  **Build Offset Map**: The cleaner scans the log (head to tail) and builds a map: `Key -> LatestOffset`.
+2.  **Rewrite**: It iterates through old segments. If a record's offset matches the `LatestOffset` in the map, it is kept. Otherwise, it is discarded (superseded).
+3.  **Swap**: The old segment file is atomically replaced by the new, smaller `.clean` file.
+
+This ensures that for any given key, at least the last known value is always preserved, effectively turning the Log into a persistent Key-Value Store.

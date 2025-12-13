@@ -84,4 +84,8 @@ impl Index {
     pub fn entries_len(&self) -> usize {
         self.entries.len()
     }
+
+    pub fn entries(&self) -> &[(u32, u32)] {
+        &self.entries
+    }
 }

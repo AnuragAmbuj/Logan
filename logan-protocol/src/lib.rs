@@ -13,3 +13,4 @@ pub use codec::*;
 pub use error_codes::*;
 pub use messages::*;
 pub use primitives::*;
+pub use primitives::{CompactArray, CompactString, TaggedFields};

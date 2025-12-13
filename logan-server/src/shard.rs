@@ -27,6 +27,10 @@ pub enum ShardCommand {
         topic_partition: TopicPartition,
         resp_tx: oneshot::Sender<Result<()>>,
     },
+    DeleteTopic {
+        topic_name: String,
+        resp_tx: oneshot::Sender<Result<()>>,
+    },
     // We can add Stop/Shutdown later
 }
 
@@ -35,7 +39,7 @@ pub enum ShardCommand {
 pub struct Shard {
     id: usize,
     logs: HashMap<TopicPartition, Log>,
-    log_dir: PathBuf,
+    _log_dir: PathBuf,
     config: LogConfig,
     base_dir: PathBuf,
 }
@@ -45,7 +49,7 @@ impl Shard {
         Self {
             id,
             logs: HashMap::new(),
-            log_dir: base_dir.clone(), // In reality we join topic-part
+            _log_dir: base_dir.clone(), // In reality we join topic-part
             base_dir,
             config,
         }
@@ -77,6 +81,13 @@ impl Shard {
                     resp_tx,
                 } => {
                     let res = self.handle_create(topic_partition);
+                    let _ = resp_tx.send(res);
+                }
+                ShardCommand::DeleteTopic {
+                    topic_name,
+                    resp_tx,
+                } => {
+                    let res = self.handle_delete_topic(&topic_name);
                     let _ = resp_tx.send(res);
                 }
             }
@@ -138,6 +149,48 @@ impl Shard {
         let subdir = self.base_dir.join(format!("{}-{}", topic, partition));
         let log = Log::new(subdir, self.config.clone())?;
         self.logs.insert(tp.clone(), log);
+        Ok(())
+    }
+
+    fn handle_delete_topic(&mut self, topic_name: &str) -> Result<()> {
+        // 1. Identify valid keys
+        let keys_to_remove: Vec<TopicPartition> = self
+            .logs
+            .keys()
+            .filter(|(t, _)| t == topic_name)
+            .cloned()
+            .collect();
+
+        // 2. Remove from map (drops Log, releases file handles)
+        for k in &keys_to_remove {
+            self.logs.remove(k);
+        }
+
+        // 3. Delete directories
+        // We iterate through directory to find matching folders because
+        // we might have partitions on disk not yet loaded in `self.logs`.
+        let entries = std::fs::read_dir(&self.base_dir)?;
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    // convention: topic-partition
+                    if name.starts_with(&format!("{}-", topic_name)) {
+                        // Check if it's strictly this topic
+                        // e.g. "my-topic-0". If topic is "my", "my-topic-0" matches prefix..
+                        // Need better parsing.
+                        if let Some(idx) = name.rfind('-') {
+                            let (t, _p) = name.split_at(idx);
+                            if t == topic_name {
+                                info!("Shard {} deleting path {:?}", self.id, path);
+                                std::fs::remove_dir_all(&path)?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -225,5 +278,24 @@ impl ShardManager {
             .await
             .map_err(|_| anyhow::anyhow!("Shard closed"))?;
         rx.await?
+    }
+
+    pub async fn delete_topic(&self, topic: String) -> Result<()> {
+        // Broadcast to ALL shards
+        for shard_tx in &self.shards {
+            let (tx, rx) = oneshot::channel();
+            let cmd = ShardCommand::DeleteTopic {
+                topic_name: topic.clone(),
+                resp_tx: tx,
+            };
+            // Send error implies shard down, ignore or log?
+            // We should try to send to all.
+            if let Ok(_) = shard_tx.send(cmd).await {
+                // Wait for completion? Maybe parallelize this?
+                // For now, wait sequentially for safety.
+                let _ = rx.await;
+            }
+        }
+        Ok(())
     }
 }

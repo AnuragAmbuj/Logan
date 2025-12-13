@@ -3,6 +3,7 @@
 #![deny(unreachable_pub)]
 
 pub mod error;
+pub mod offset_manager;
 pub mod server;
 pub mod shard;
 

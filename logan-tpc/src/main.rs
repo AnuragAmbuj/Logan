@@ -62,21 +62,22 @@ fn main() -> Result<()> {
                                                  if let Ok(req) = ProduceRequest::decode(&mut cursor) {
                                                      // Simulate write (no-op or memory append)
                                                      
-                                                     // Construct Response
-                                                     let resp = ProduceResponse {
-                                                         responses: KafkaArray(req.topic_data.0.into_iter().map(|td| {
-                                                             TopicProduceResponse {
-                                                                 name: td.name,
-                                                                 partition_responses: KafkaArray(td.partition_data.0.into_iter().map(|pd| {
-                                                                     PartitionProduceResponse {
-                                                                         index: pd.index,
-                                                                         error_code: ErrorCode::None,
-                                                                         base_offset: 1234, // Mock
-                                                                     }
-                                                                 }).collect())
-                                                             }
-                                                         }).collect()),
-                                                     };
+                                                    // Construct Response
+                                                    let resp = ProduceResponse {
+                                                        responses: KafkaArray(req.topic_data.0.into_iter().map(|td| {
+                                                            TopicProduceResponse {
+                                                                name: td.name,
+                                                                partition_responses: KafkaArray(td.partition_data.0.into_iter().map(|pd| {
+                                                                    PartitionProduceResponse {
+                                                                        index: pd.index,
+                                                                        error_code: ErrorCode::None,
+                                                                        base_offset: 1234, // Mock
+                                                                    }
+                                                                }).collect())
+                                                            }
+                                                        }).collect()),
+                                                        throttle_time_ms: 0,
+                                                    };
                                                      
                                                      let mut resp_buf = BytesMut::with_capacity(1024);
                                                      // Reserve space for size

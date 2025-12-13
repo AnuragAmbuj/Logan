@@ -8,6 +8,7 @@ use tracing::{error, info, warn};
 
 use crate::dispatch::dispatch;
 use crate::error::ServerError;
+use crate::offset_manager::OffsetManager;
 use crate::shard::ShardManager;
 use anyhow::Result;
 use dashmap::DashMap;
@@ -27,7 +28,10 @@ pub struct Server {
     /// Shared topic state
     topics: Arc<DashMap<String, CreatableTopic>>,
     /// Shard Manager (Core-Local Partitioning)
+    /// Shard Manager (Core-Local Partitioning)
     shard_manager: Arc<ShardManager>,
+    /// Offset Manager
+    offset_manager: Arc<OffsetManager>,
 }
 
 impl Server {
@@ -37,6 +41,7 @@ impl Server {
         max_connections: usize,
         topics: Arc<DashMap<String, CreatableTopic>>,
         shard_manager: Arc<ShardManager>,
+        offset_manager: Arc<OffsetManager>,
     ) -> (Self, broadcast::Sender<()>) {
         let (shutdown_tx, _shutdown_rx) = broadcast::channel(1);
 
@@ -47,6 +52,7 @@ impl Server {
                 topics,
                 shutdown_tx: shutdown_tx.clone(),
                 shard_manager,
+                offset_manager,
             },
             shutdown_tx,
         )
@@ -85,8 +91,9 @@ impl Server {
 
                             let topics = Arc::clone(&self.topics);
                             let shard_manager = Arc::clone(&self.shard_manager);
+                            let offset_manager = Arc::clone(&self.offset_manager);
                             tokio::spawn(async move {
-                                handle_connection(stream, addr, topics, shard_manager).await;
+                                handle_connection(stream, addr, topics, shard_manager, offset_manager).await;
                             });
                         }
                         Err(e) => {
@@ -110,9 +117,17 @@ async fn handle_connection(
     addr: SocketAddr,
     topics: Arc<DashMap<String, CreatableTopic>>,
     shard_manager: Arc<ShardManager>,
+    offset_manager: Arc<OffsetManager>,
 ) {
     loop {
-        match dispatch(&mut stream, topics.clone(), shard_manager.clone()).await {
+        match dispatch(
+            &mut stream,
+            topics.clone(),
+            shard_manager.clone(),
+            offset_manager.clone(),
+        )
+        .await
+        {
             Ok(true) => {
                 // Keep connection open
             }

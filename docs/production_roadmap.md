@@ -15,9 +15,9 @@ This roadmap outlines the path to transforming the current prototype into a prod
 - **Target:** Full support for `RecordBatch` consumption and production. Implement compression (Snappy, LZ4, Zstd).
 - **Benefit:** Higher throughput, reduced network/disk IO.
 
-### 1.3 Retention & Compaction
-- **Current:** Append-only, infinite storage.
-- **Target:** Time-based and size-based retention policies. Log compaction for key-value use cases.
+### 1.3 Retention & Compaction (Partially Complete)
+- **Current:** Time/Size retention implemented. Log Compaction core logic (cleaner, offset map) implemented and verified.
+- **Target:** Full integration of background cleaning cycle.
 - **Benefit:** Disk space management, support for state stores.
 
 ### 1.4 Durability Guarantees

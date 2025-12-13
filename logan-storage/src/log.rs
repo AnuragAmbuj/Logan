@@ -7,9 +7,9 @@ use std::time::{Duration, SystemTime};
 
 #[derive(Debug)]
 pub struct Log {
-    _dir: PathBuf,
-    config: LogConfig,
-    segments: Vec<LogSegment>,
+    pub(crate) _dir: PathBuf,
+    pub(crate) config: LogConfig,
+    pub(crate) segments: Vec<LogSegment>,
 }
 
 impl Log {

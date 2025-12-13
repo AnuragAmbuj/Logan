@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use dashmap::DashMap;
 use logan_protocol::messages::CreatableTopic;
+use logan_server::offset_manager::OffsetManager;
 use logan_server::server::Server;
 use logan_server::shard::ShardManager;
 use std::net::SocketAddr;
@@ -59,6 +60,7 @@ async fn main() -> Result<()> {
     let config = logan_storage::config::LogConfig {
         retention_bytes: args.retention_bytes,
         retention_ms: args.retention_hours.map(|h| h * 60 * 60 * 1000),
+        cleanup_policy: logan_storage::config::CleanupPolicy::Delete, // Default to Delete for now
     };
 
     let num_shards = args.shards.unwrap_or_else(num_cpus::get);
@@ -71,6 +73,7 @@ async fn main() -> Result<()> {
     // Wait, let's check my ShardManager::new signature in shard.rs.
     // It returns Result<Self>.
     let shard_manager = Arc::new(ShardManager::new(args.log_dir, config, num_shards).await?);
+    let offset_manager = Arc::new(OffsetManager::new());
 
     let listener = TcpListener::bind(args.bind).await?;
 
@@ -79,6 +82,7 @@ async fn main() -> Result<()> {
         args.max_connections,
         topics.clone(),
         shard_manager,
+        offset_manager,
     );
 
     let server_handle = tokio::spawn(async move {

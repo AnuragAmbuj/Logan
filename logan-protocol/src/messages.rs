@@ -5,7 +5,8 @@ use bytes::{Buf, BufMut};
 
 use crate::error_codes::ErrorCode;
 use crate::primitives::{
-    KafkaArray, KafkaBool, KafkaBytes, KafkaString, NullableBytes, NullableString,
+    CompactArray, CompactString, KafkaArray, KafkaBool, KafkaBytes, KafkaString, NullableBytes,
+    NullableString, TaggedFields,
 };
 use crate::{ApiKey, Decodable, Encodable};
 
@@ -70,74 +71,100 @@ impl Decodable for ResponseHeader {
     }
 }
 
-/// Metadata Request (v0+)
-#[derive(Debug)]
-#[allow(dead_code)]
+/// A Kafka protocol response header (Flexible / v1)
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub struct ResponseHeaderFlexible {
+    pub correlation_id: i32,
+    pub _tagged_fields: TaggedFields,
+}
+
+impl Encodable for ResponseHeaderFlexible {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
+        self.correlation_id.encode(buf)?;
+        self._tagged_fields.encode(buf)
+    }
+}
+
+impl Decodable for ResponseHeaderFlexible {
+    fn decode(buf: &mut impl Buf) -> Result<Self> {
+        let correlation_id = i32::decode(buf)?;
+        let _tagged_fields = TaggedFields::decode(buf)?;
+        Ok(Self {
+            correlation_id,
+            _tagged_fields,
+        })
+    }
+}
+
+// Metadata Structs and Impls removed/updated below
+#[derive(Debug, Clone)]
 pub struct MetadataRequest {
-    /// The topics to fetch metadata for
     pub topics: KafkaArray<KafkaString>,
-    /// Whether to auto-create topics
-    pub allow_auto_topic_creation: KafkaBool,
 }
 
 impl Decodable for MetadataRequest {
     fn decode(buf: &mut impl Buf) -> Result<Self> {
         let topics = KafkaArray::<KafkaString>::decode(buf)?;
-        let allow_auto_topic_creation = KafkaBool::decode(buf)?;
-        Ok(Self {
-            topics,
-            allow_auto_topic_creation,
-        })
+        // V0: No allow_auto_topic_creation
+        Ok(Self { topics })
     }
 }
 
 impl Encodable for MetadataRequest {
     fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
-        self.topics.encode(buf)?;
-        self.allow_auto_topic_creation.encode(buf)
+        self.topics.encode(buf)
     }
 }
 
-/// Metadata Response (v0+)
 #[derive(Debug, Default)]
-#[allow(dead_code)]
 pub struct MetadataResponse {
-    /// The duration in milliseconds for which the request was throttled due to a quota violation, or zero if the request did not violate any quota.
-    pub throttle_time_ms: i32,
-    /// Each broker in the response.
-    pub brokers: KafkaArray<Broker>,
-    /// The cluster ID that responding broker belongs to.
-    pub cluster_id: NullableString,
-    /// The ID of the controller broker.
-    pub controller_id: i32,
-    /// Each topic in the response.
+    pub brokers: KafkaArray<BrokerV0>,
     pub topics: KafkaArray<TopicMetadata>,
 }
 
 impl Decodable for MetadataResponse {
     fn decode(buf: &mut impl Buf) -> Result<Self> {
-        let throttle_time_ms = i32::decode(buf)?;
-        let brokers = KafkaArray::<Broker>::decode(buf)?;
-        let cluster_id = NullableString::decode(buf)?;
-        let controller_id = i32::decode(buf)?;
+        // V0: No throttle_time_ms
+        let brokers = KafkaArray::<BrokerV0>::decode(buf)?;
+        // V0: No cluster_id, controller_id
         let topics = KafkaArray::<TopicMetadata>::decode(buf)?;
-        Ok(Self {
-            throttle_time_ms,
-            brokers,
-            cluster_id,
-            controller_id,
-            topics,
-        })
+        Ok(Self { brokers, topics })
     }
 }
 
 impl Encodable for MetadataResponse {
     fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
-        self.throttle_time_ms.encode(buf)?;
         self.brokers.encode(buf)?;
-        self.cluster_id.encode(buf)?;
-        self.controller_id.encode(buf)?;
         self.topics.encode(buf)
+    }
+}
+
+/// Broker information (V0)
+#[derive(Debug, Default, Clone)]
+pub struct BrokerV0 {
+    pub node_id: i32,
+    pub host: KafkaString,
+    pub port: i32,
+}
+
+impl Decodable for BrokerV0 {
+    fn decode(buf: &mut impl Buf) -> Result<Self> {
+        let node_id = i32::decode(buf)?;
+        let host = KafkaString::decode(buf)?;
+        let port = i32::decode(buf)?;
+        Ok(Self {
+            node_id,
+            host,
+            port,
+        })
+    }
+}
+
+impl Encodable for BrokerV0 {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
+        self.node_id.encode(buf)?;
+        self.host.encode(buf)?;
+        self.port.encode(buf)
     }
 }
 
@@ -345,6 +372,72 @@ impl Encodable for ApiVersionResponse {
         self.api_key.encode(buf)?;
         self.min_version.encode(buf)?;
         self.max_version.encode(buf)
+    }
+}
+
+/// ApiVersion for V3+ (Flexible headers)
+#[derive(Debug, Default)]
+pub struct ApiVersionV3 {
+    pub api_key: ApiKey,
+    pub min_version: i16,
+    pub max_version: i16,
+    pub _tagged_fields: TaggedFields,
+}
+
+impl Encodable for ApiVersionV3 {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
+        self.api_key.encode(buf)?;
+        self.min_version.encode(buf)?;
+        self.max_version.encode(buf)?;
+        self._tagged_fields.encode(buf)
+    }
+}
+
+impl Decodable for ApiVersionV3 {
+    fn decode(buf: &mut impl Buf) -> Result<Self> {
+        let api_key = ApiKey::decode(buf)?;
+        let min_version = i16::decode(buf)?;
+        let max_version = i16::decode(buf)?;
+        let _tagged_fields = TaggedFields::decode(buf)?;
+        Ok(Self {
+            api_key,
+            min_version,
+            max_version,
+            _tagged_fields,
+        })
+    }
+}
+
+/// ApiVersions Response (v3+)
+#[derive(Debug, Default)]
+pub struct ApiVersionsResponseV3 {
+    pub error_code: i16,
+    pub api_keys: CompactArray<ApiVersionV3>,
+    pub throttle_time_ms: i32,
+    pub _tagged_fields: TaggedFields,
+}
+
+impl Encodable for ApiVersionsResponseV3 {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
+        self.error_code.encode(buf)?;
+        self.api_keys.encode(buf)?;
+        self.throttle_time_ms.encode(buf)?;
+        self._tagged_fields.encode(buf)
+    }
+}
+
+impl Decodable for ApiVersionsResponseV3 {
+    fn decode(buf: &mut impl Buf) -> Result<Self> {
+        let error_code = i16::decode(buf)?;
+        let api_keys = CompactArray::<ApiVersionV3>::decode(buf)?;
+        let throttle_time_ms = i32::decode(buf)?;
+        let _tagged_fields = TaggedFields::decode(buf)?;
+        Ok(Self {
+            error_code,
+            api_keys,
+            throttle_time_ms,
+            _tagged_fields,
+        })
     }
 }
 
@@ -579,6 +672,7 @@ pub struct PartitionProduceData {
 #[allow(dead_code)]
 pub struct ProduceResponse {
     pub responses: KafkaArray<TopicProduceResponse>,
+    pub throttle_time_ms: i32,
 }
 
 #[derive(Debug)]
@@ -656,6 +750,7 @@ impl Decodable for PartitionProduceData {
 impl Encodable for ProduceResponse {
     fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
         self.responses.encode(buf)?;
+        self.throttle_time_ms.encode(buf)?;
         Ok(())
     }
 }
@@ -663,7 +758,11 @@ impl Encodable for ProduceResponse {
 impl Decodable for ProduceResponse {
     fn decode(buf: &mut impl Buf) -> Result<Self> {
         let responses = KafkaArray::<TopicProduceResponse>::decode(buf)?;
-        Ok(Self { responses })
+        let throttle_time_ms = i32::decode(buf)?;
+        Ok(Self {
+            responses,
+            throttle_time_ms,
+        })
     }
 }
 
@@ -1011,6 +1110,286 @@ impl Decodable for PartitionData {
             error_code,
             high_watermark,
             records,
+        })
+    }
+}
+
+/// OffsetCommit Request (v0-v2 common fields)
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct OffsetCommitRequest {
+    pub group_id: KafkaString,
+    pub generation_id: i32,
+    pub member_id: KafkaString,
+    // V2+: retention_time. We'll include it for V2 compatibility, defaults to -1 (generic)
+    pub retention_time: i64,
+    pub topics: KafkaArray<OffsetCommitTopic>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct OffsetCommitTopic {
+    pub name: KafkaString,
+    pub partitions: KafkaArray<OffsetCommitPartition>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct OffsetCommitPartition {
+    pub partition_index: i32,
+    pub committed_offset: i64,
+    pub metadata: NullableString,
+}
+
+/// OffsetCommit Response
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct OffsetCommitResponse {
+    pub topics: KafkaArray<OffsetCommitTopicResponse>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct OffsetCommitTopicResponse {
+    pub name: KafkaString,
+    pub partitions: KafkaArray<OffsetCommitPartitionResponse>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct OffsetCommitPartitionResponse {
+    pub partition_index: i32,
+    pub error_code: ErrorCode,
+}
+
+impl Encodable for OffsetCommitRequest {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
+        self.group_id.encode(buf)?;
+        self.generation_id.encode(buf)?;
+        self.member_id.encode(buf)?;
+        self.retention_time.encode(buf)?;
+        self.topics.encode(buf)
+    }
+}
+
+impl Decodable for OffsetCommitRequest {
+    fn decode(buf: &mut impl Buf) -> Result<Self> {
+        let group_id = KafkaString::decode(buf)?;
+        let generation_id = i32::decode(buf)?;
+        let member_id = KafkaString::decode(buf)?;
+        let retention_time = i64::decode(buf)?;
+        let topics = KafkaArray::<OffsetCommitTopic>::decode(buf)?;
+        Ok(Self {
+            group_id,
+            generation_id,
+            member_id,
+            retention_time,
+            topics,
+        })
+    }
+}
+
+impl Encodable for OffsetCommitTopic {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
+        self.name.encode(buf)?;
+        self.partitions.encode(buf)
+    }
+}
+
+impl Decodable for OffsetCommitTopic {
+    fn decode(buf: &mut impl Buf) -> Result<Self> {
+        let name = KafkaString::decode(buf)?;
+        let partitions = KafkaArray::<OffsetCommitPartition>::decode(buf)?;
+        Ok(Self { name, partitions })
+    }
+}
+
+impl Encodable for OffsetCommitPartition {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
+        self.partition_index.encode(buf)?;
+        self.committed_offset.encode(buf)?;
+        self.metadata.encode(buf)
+    }
+}
+
+impl Decodable for OffsetCommitPartition {
+    fn decode(buf: &mut impl Buf) -> Result<Self> {
+        let partition_index = i32::decode(buf)?;
+        let committed_offset = i64::decode(buf)?;
+        let metadata = NullableString::decode(buf)?;
+        Ok(Self {
+            partition_index,
+            committed_offset,
+            metadata,
+        })
+    }
+}
+
+impl Encodable for OffsetCommitResponse {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
+        self.topics.encode(buf)
+    }
+}
+
+impl Decodable for OffsetCommitResponse {
+    fn decode(buf: &mut impl Buf) -> Result<Self> {
+        let topics = KafkaArray::<OffsetCommitTopicResponse>::decode(buf)?;
+        Ok(Self { topics })
+    }
+}
+
+impl Encodable for OffsetCommitTopicResponse {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
+        self.name.encode(buf)?;
+        self.partitions.encode(buf)
+    }
+}
+
+impl Decodable for OffsetCommitTopicResponse {
+    fn decode(buf: &mut impl Buf) -> Result<Self> {
+        let name = KafkaString::decode(buf)?;
+        let partitions = KafkaArray::<OffsetCommitPartitionResponse>::decode(buf)?;
+        Ok(Self { name, partitions })
+    }
+}
+
+impl Encodable for OffsetCommitPartitionResponse {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
+        self.partition_index.encode(buf)?;
+        self.error_code.encode(buf)
+    }
+}
+
+impl Decodable for OffsetCommitPartitionResponse {
+    fn decode(buf: &mut impl Buf) -> Result<Self> {
+        let partition_index = i32::decode(buf)?;
+        let error_code = ErrorCode::decode(buf)?;
+        Ok(Self {
+            partition_index,
+            error_code,
+        })
+    }
+}
+
+/// OffsetFetch Request (v1+)
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct OffsetFetchRequest {
+    pub group_id: KafkaString,
+    pub topics: KafkaArray<OffsetFetchTopic>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct OffsetFetchTopic {
+    pub name: KafkaString,
+    pub partition_indexes: KafkaArray<i32>,
+}
+
+/// OffsetFetch Response
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct OffsetFetchResponse {
+    pub topics: KafkaArray<OffsetFetchTopicResponse>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct OffsetFetchTopicResponse {
+    pub name: KafkaString,
+    pub partitions: KafkaArray<OffsetFetchPartitionResponse>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct OffsetFetchPartitionResponse {
+    pub partition_index: i32,
+    pub committed_offset: i64,
+    pub metadata: NullableString,
+    pub error_code: ErrorCode,
+}
+
+impl Encodable for OffsetFetchRequest {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
+        self.group_id.encode(buf)?;
+        self.topics.encode(buf)
+    }
+}
+
+impl Decodable for OffsetFetchRequest {
+    fn decode(buf: &mut impl Buf) -> Result<Self> {
+        let group_id = KafkaString::decode(buf)?;
+        let topics = KafkaArray::<OffsetFetchTopic>::decode(buf)?;
+        Ok(Self { group_id, topics })
+    }
+}
+
+impl Encodable for OffsetFetchTopic {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
+        self.name.encode(buf)?;
+        self.partition_indexes.encode(buf)
+    }
+}
+
+impl Decodable for OffsetFetchTopic {
+    fn decode(buf: &mut impl Buf) -> Result<Self> {
+        let name = KafkaString::decode(buf)?;
+        let partition_indexes = KafkaArray::<i32>::decode(buf)?;
+        Ok(Self {
+            name,
+            partition_indexes,
+        })
+    }
+}
+
+impl Encodable for OffsetFetchResponse {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
+        self.topics.encode(buf)
+    }
+}
+
+impl Decodable for OffsetFetchResponse {
+    fn decode(buf: &mut impl Buf) -> Result<Self> {
+        let topics = KafkaArray::<OffsetFetchTopicResponse>::decode(buf)?;
+        Ok(Self { topics })
+    }
+}
+
+impl Encodable for OffsetFetchTopicResponse {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
+        self.name.encode(buf)?;
+        self.partitions.encode(buf)
+    }
+}
+
+impl Decodable for OffsetFetchTopicResponse {
+    fn decode(buf: &mut impl Buf) -> Result<Self> {
+        let name = KafkaString::decode(buf)?;
+        let partitions = KafkaArray::<OffsetFetchPartitionResponse>::decode(buf)?;
+        Ok(Self { name, partitions })
+    }
+}
+
+impl Encodable for OffsetFetchPartitionResponse {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<()> {
+        self.partition_index.encode(buf)?;
+        self.committed_offset.encode(buf)?;
+        self.metadata.encode(buf)?;
+        self.error_code.encode(buf)
+    }
+}
+
+impl Decodable for OffsetFetchPartitionResponse {
+    fn decode(buf: &mut impl Buf) -> Result<Self> {
+        let partition_index = i32::decode(buf)?;
+        let committed_offset = i64::decode(buf)?;
+        let metadata = NullableString::decode(buf)?;
+        let error_code = ErrorCode::decode(buf)?;
+        Ok(Self {
+            partition_index,
+            committed_offset,
+            metadata,
+            error_code,
         })
     }
 }

@@ -1,91 +1,81 @@
-# Logan - High-Performance Distributed Message Broker
+# Logan
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Build Status](https://github.com/AnuragAmbuj/logan/actions/workflows/rust.yml/badge.svg)](https://github.com/AnuragAmbuj/logan/actions)
-[![Documentation](https://docs.rs/logan/badge.svg)](https://docs.rs/logan)
+Logan is a high-performance, distributed streaming platform written in Rust, designed to be compatible with the Apache Kafka® protocol. It focuses on experimental high-performance architecture (Thread-per-Core, Zero-Copy I/O) while maintaining compatibility with standard Kafka clients.
 
-Logan is a cloud-native, distributed streaming platform implemented in Rust. It mimics the Kafka protocol to provide a high-throughput, low-latency, and durable message broker that is compatible with existing Kafka clients.
+## Features
 
-**⚠️ Status: Active Development (Pre-Alpha)**
-Logan is currently in the early stages of development. While it supports basic production, consumption, and persistence, it is not yet feature-complete for production environments.
+### 🚀 Performance
+- **Core-Local Partitioning**: Implements a Shared-Nothing Actor model to eliminate lock contention on hot partitions.
+- **Zero-Copy Networking**: Uses `sendfile` (on Linux) for high-throughput `Fetch` responses, bypassing user-space copying.
+- **Batching & Compression**: Support for Kafka v2 `RecordBatch` format with `Snappy` and `LZ4` compression.
+- **TCP_NODELAY**: Optimized for low-latency delivery.
 
-👉 **[View Implementation Plan & Roadmap](./PLAN.md)**
+### 🛡️ Reliability
+- **CRC32 Data Integrity**: All log records are protected by CRC32 checksums, validated on read.
+- **Configurable Retention**: Policy-based log cleanup by time (hours) or size (bytes).
+- **WAL-based Storage**: Durable append-only log segments.
 
-## Key Features (Current & Planned)
+### 🔌 Compatibility
+- **Kafka Protocol Support**: Compatible with standard Kafka clients like `kcat` (librdkafka) and `kafka-python`.
+- **Supported APIs**: 
+    - `ApiVersions` (v0-v3)
+    - `Metadata` (v0)
+    - `Produce` (v2)
+    - `Fetch` (v0)
+    - `OffsetCommit` (v0-v2) *[In-Memory]*
+    - `OffsetFetch` (v0-v1) *[In-Memory]*
+    - `CreateTopics`
 
--   **Kafka Protocol Compatible**: Works with standard Kafka clients.
--   **High Performance**: Thread-per-core architecture using `tokio`.
--   **Durable Storage**: Disk-based persistence with sparse indexing.
--   **Zero Dependencies**: No Zookeeper required (Planned KRaft implementation).
--   **Written in Rust**: Memory safety and performance without garbage collection.
+## Architecture
 
-## Project Structure
+Logan uses a **Shard-based Architecture**:
+- A **Shard** is an independent Actor responsible for a subset of Topic-Partitions.
+- The **ShardManager** routes incoming requests to the specific Shard owning the partition.
+- This design ensures that requests for different partitions can proceed in parallel without locking shared resources.
 
--   `logan-bin`: The server binary.
--   `logan-server`: Network layer and request dispatching.
--   `logan-storage`: High-performance, append-only storage engine.
--   `logan-protocol`: Kafka wire protocol implementation.
--   `logan-client`: Async Rust client library.
-
-## Getting Started
+## Usage
 
 ### Prerequisites
--   Rust (stable)
+- Rust (latest stable)
+- Linux (for Zero-Copy `sendfile` support)
 
-### Running the Broker
-
+### Building
 ```bash
-# Start the broker (defaults to port 9092, logs in /tmp/logan-logs)
-cargo run --release -p logan-bin
+cargo build --release
 ```
 
-To specify a custom log directory:
+### Running the Server
 ```bash
-cargo run --release -p logan-bin -- --log-dir ./data/raft-logs
+# Start server on port 9093
+cargo run --release -p logan-bin -- --bind 0.0.0.0:9093 --log-level info
+```
+
+### Using with `kcat`
+```bash
+# List Metadata
+kcat -b localhost:9093 -L
+
+# Produce Messages
+echo "hello logan" | kcat -b localhost:9093 -t test-topic -P
+
+# Consume Messages
+kcat -b localhost:9093 -t test-topic -C -o beginning
 ```
 
 ### Running Tests
-
+Logan has a comprehensive test suite including property-based tests for storage reliability.
 ```bash
-# Run unit and integration tests
-cargo test --workspace
+cargo test
 ```
 
-## Roadmap
-
-We are currently in **Phase 1: Foundation & Reliability**.
-
-1.  **Prototype Phase** (Completed) ✅
-    -   Basic networking, storage, and protocol parsing.
-2.  **Phase 1: Foundation** (In Progress) 🚧
-    -   Data integrity check (CRC32), rigorous testing, and retention policies.
-3.  **Phase 2: Performance**
-    -   Zero-copy networking, batching, and compression.
-4.  **Phase 3: Client & Protocol Expansion** (Completed) ✅
-    -   Expanded protocol (DeleteTopics), implemented CLI client, and enhanced common utilities.
-5.  **Phase 4: Compatibility**
-    -   Consumer groups, offset management, and verification with external clients.
-6.  **Phase 5: Clustering**
-    -   Raft-based consensus and replication.
-
-See [PLAN.md](./PLAN.md) for the detailed checklist.
-
-## 🤝 Contributing
-
-We welcome interest in the project! Please check the [Implementation Plan](./PLAN.md) to see where you can help.
-
-You can also use AI to contribute to the project.
-
-<u>In case you wish to use AI to contribute to the project</u>
-- Please use Claude 4.5 Opus, Gemini 3.0 Pro or any other LLM to generate clean code.
-- Stick to implementation plan and checklist.
-- Use md file/s to document your changes and commit the changes to the repository.
-- Do not generate code for any other purpose.
-- Make sure that the test cases are passing
-- Do not modify existing test cases without permission. Add you own test cases for your changes.
-
-While we welcome your contribution, please do not expect to get paid for it.
+## Project Structure
+- `logan-bin`: The main server executable.
+- `logan-server`: Core server logic, networking, and request dispatch.
+- `logan-storage`: Persistent storage engine (Logs, Segments, Indexes).
+- `logan-protocol`: Kafka protocol definitions, encoding/decoding, and primitives.
+- `logan-client`: Minimal async client client library.
+- `logan-bench`: Performance benchmarking tool.
+- `logan-common`: Shared utilities (logging, errors).
 
 ## License
-
 MIT
