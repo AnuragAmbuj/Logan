@@ -26,6 +26,25 @@ Linux (and other Unixes) provides a system call `sendfile`. It transfers data be
 
 Result: **Zero CPU copies** and only **two context switches**.
 
+```mermaid
+graph TD
+    subgraph "Standard I/O"
+        D1[Disk] -->|DMA| K1[Kernel Buffer]
+        K1 -->|CPU Copy| U1[User Buffer]
+        U1 -->|CPU Copy| S1[Socket Buffer]
+        S1 -->|DMA| N1[NIC]
+    end
+    
+    subgraph "Zero-Copy sendfile"
+        D2[Disk] -->|DMA| K2[Kernel Buffer]
+        K2 -.->|Descriptor Only| S2[Socket Buffer]
+        K2 -->|DMA| N2[NIC]
+    end
+    
+    style U1 fill:#f9f,stroke:#333,stroke-width:2px
+    style S2 fill:#bbf,stroke:#333,stroke-width:2px
+```
+
 ## Architecture Breakdown
 
 ### When to use it?

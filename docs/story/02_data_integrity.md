@@ -29,6 +29,15 @@ We chose **CRC32** (specifically the Castagnoli polynomial used by Kafka/ISCSI) 
 ### The Record Wrapper
 We don't just store the payload. We store a "Frame".
 
+```mermaid
+block-beta
+    columns 4
+    Length["Length (4B)"]
+    CRC["CRC32 (4B)"]
+    Attributes["Attrs (1B)"]
+    Payload["Payload (N Bytes)"]
+```
+
 ```text
 [Length: 4B] [CRC: 4B] [Attributes: 1B] [Key Length: 4B] [Key] [Value Length: 4B] [Value]
 ```
@@ -42,6 +51,17 @@ Every time we read this frame:
 2.  We recalculate the CRC of the content.
 3.  We compare it with the stored CRC.
 4.  Mismatch = **FATAL ERROR**.
+
+```mermaid
+graph TD
+    Read(Read Record) --> Parse[Parse Header]
+    Parse --> GetCRC[Extract Stored CRC]
+    Parse --> GetPayload[Extract Payload]
+    GetPayload --> Calc[Compute Checksum]
+    Calc --> Compare{Match?}
+    Compare -->|Yes| Success(Valid Data)
+    Compare -->|No| Error(CorruptDataError)
+```
 
 ## The Code Implementation
 

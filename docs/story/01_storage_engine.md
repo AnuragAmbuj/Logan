@@ -22,6 +22,20 @@ We realized that our write pattern is strictly sequential. The most efficient wa
 
 Thus, the **Log** abstraction was born: an ordered, immutable sequence of records.
 
+```mermaid
+graph LR
+    subgraph "Logical Stream"
+        M1[Msg 0] --- M2[Msg 1] --- M3[Msg 2] --- M4[Msg ...]
+    end
+    subgraph "Physical Segments"
+        S1[000.log]
+        S2[1000.log]
+    end
+    M1 -.-> S1
+    M2 -.-> S1
+    M3 -.-> S2
+```
+
 ## Architecture Breakdown
 
 ### 1. The Log Segment
@@ -33,6 +47,15 @@ A single log file can grow indefinitely, which makes it hard to manage (delete o
 
 ### 2. The Indexing Problem
 **Problem**: If a user asks for "Offset 500", and we have a 1GB log file, how do we find it?
+
+```mermaid
+graph TD
+    User(Fetch Offset 500) -->|Query| Index
+    Index{Binary Search .index} -->|Found Entry| P[Pos: 1024, Base: 400]
+    P -->|Seek| Log[.log File]
+    Log -->|Scan forward| Found(Found Offset 500)
+```
+
 *   **Naive Approach**: Scan the file from the beginning. O(N). Too slow.
 *   **Full Index**: Map every offset to a position. O(1). Too memory heavy (16 bytes per message).
 

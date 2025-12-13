@@ -16,6 +16,19 @@ Log Compaction changes the semantics of the Log.
 
 This effectively turns the Logan Topic into a **Key-Value Store** persisted as a log.
 
+```mermaid
+graph LR
+    subgraph "Before Compaction"
+        L1[K:A, V:1] --- L2[K:B, V:1] --- L3[K:A, V:2]
+    end
+    subgraph "After Compaction"
+        R1[K:B, V:1] --- R2[K:A, V:2]
+    end
+    L1 -.->|Discarded| Trash
+    L2 -.->|Kept| R1
+    L3 -.->|Kept| R2
+```
+
 ## Architecture Breakdown
 
 ### The Log Cleaner

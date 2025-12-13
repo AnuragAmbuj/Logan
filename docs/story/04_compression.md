@@ -29,6 +29,17 @@ Once we have a batch, we can compress it.
 ### The Batch Format (Kafka v2)
 We adopted the standard Kafka v2 Batch format for compatibility.
 
+```mermaid
+block-beta
+    columns 1
+    Header["Batch Header (Uncompressed Metadata)"]
+    Body["Message Set (Compressed Wrapper)"]
+    Records["Inner RecordBatch (Original Headers + Data)"]
+    
+    Header --> Body
+    Body -- "Decompress" --> Records
+```
+
 ```text
 [BaseOffset] [BatchLength] ... [Attributes(CompressionType)] ... [Records...]
 ```
@@ -78,6 +89,22 @@ pub fn compress_batch(data: &[u8], algo: Compression) -> Result<Vec<u8>> {
 *   **GZIP**: Low CPU (encode), High CPU (decode), Best Ratio. Good for archival.
 *   **LZ4**: Low CPU (encode), Tiny CPU (decode), OK Ratio. Good for high throughput.
 *   **Snappy**: Balanced.
+
+```mermaid
+quadrantChart
+    title Compression Algorithms
+    x-axis Low CPU Usage --> High CPU Usage
+    y-axis Low Compression --> High Compression
+    quadrant-1 Efficient & Compact
+    quadrant-2 Compact but Heavy
+    quadrant-3 Fast but Large
+    quadrant-4 Balanced
+    
+    "GZIP": [0.8, 0.9]
+    "LZ4": [0.1, 0.3]
+    "Snappy": [0.2, 0.4]
+    "Zstd": [0.4, 0.8]
+```
 
 For Logan, we default to **Snappy** as a good middle ground for streaming.
 
