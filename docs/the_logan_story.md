@@ -20,8 +20,8 @@ We split the storage into **Segments**. Each segment is a pair of files:
 ```mermaid
 graph LR
     subgraph Segment
-        L[Log File (.log)]
-        I[Index File (.index)]
+        L["Log File (.log)"]
+        I["Index File (.index)"]
     end
     
     W[Writer] -->|Append Records| L
@@ -30,6 +30,27 @@ graph LR
     R[Reader] -->|Binary Search| I
     I -->|Position| L
     L -->|Read Data| R
+```
+
+### How it works in Code
+
+We use a simple mapping mechanism for the index. A sparse index entry is just 8 bytes: 4 bytes for the relative offset and 4 bytes for the physical position.
+
+```rust
+// Simplified Sparse Index Structure
+struct IndexEntry {
+    relative_offset: u32, // 4 bytes
+    position: u32,        // 4 bytes
+}
+
+impl Index {
+    fn search(&self, target_offset: u64) -> Option<u32> {
+        // Binary search the memory-mapped index file
+        self.entries.binary_search_by(|entry| {
+            entry.relative_offset.cmp(&target_offset)
+        }).map(|idx| self.entries[idx].position).ok()
+    }
+}
 ```
 
 ---
@@ -57,6 +78,21 @@ When Logan reads a record:
 2.  It calculates the checksum on the fly.
 3.  It compares it with the stored `CRC32`.
 4.  If they match, proceed. If not, **CorruptDataError**.
+
+### The Implementation
+
+We use the `crc32fast` crate for hardware-accelerated checksums.
+
+```rust
+// Validation Logic
+fn validate_record(data: &[u8], stored_crc: u32) -> Result<()> {
+    let actual_crc = crc32fast::hash(data);
+    if actual_crc != stored_crc {
+        return Err(CorruptDataError);
+    }
+    Ok(())
+}
+```
 
 ---
 
@@ -91,6 +127,23 @@ sequenceDiagram
     Note over Broker,Client: Data streams directly via DMA
 ```
 
+### The Magic of `sendfile`
+
+By delegating the transfer to the OS, we avoid the overhead of copying data into our application's memory space.
+
+```rust
+// Simplified Zero-Copy Logic
+async fn handle_fetch(socket: &mut TcpStream, file: &File, offset: u64, len: u64) {
+    // 1. Send Headers (Metadata) normally
+    socket.write_all(&headers).await?;
+
+    // 2. Zero-Copy the payload directly from Disk -> Socket
+    // This uses the sendfile syscall under the hood
+    let mut file_handle = file.take(len);
+    tokio::io::copy(&mut file_handle, socket).await?;
+}
+```
+
 ---
 
 ## Chapter 4: Compressing Time and Space (Implemented)
@@ -105,6 +158,26 @@ We added `logan-protocol/src/batch.rs` to handle the complex Kafka v2 `RecordBat
 
 **Compression Strategy:**
 -   **Snappy**: High speed, reasonable compression. Good for real-time.
+-   **LZ4**: Extremely fast decompression.
+-   **Zstd**: Best compression ratio (future proofing).
+
+### Compression in Action
+
+We wrap the batch of records in a compressed envelope.
+
+```rust
+// Writing a compressed batch
+let mut encoder = match compression {
+    Compression::Snappy => SnapEncoder::new(buffer),
+    Compression::Lz4 => Lz4Encoder::new(buffer),
+    _ => buffer,
+};
+
+for record in records {
+    encoder.write_all(&record.encode())?;
+}
+let compressed_batch = encoder.finish()?;
+```
 -   **LZ4**: Extremely fast decompression.
 -   **Zstd**: Best compression ratio (future proofing).
 
@@ -124,5 +197,30 @@ We implemented a mechanism to "rewrite" history.
 1.  **Build Offset Map**: The cleaner scans the log (head to tail) and builds a map: `Key -> LatestOffset`.
 2.  **Rewrite**: It iterates through old segments. If a record's offset matches the `LatestOffset` in the map, it is kept. Otherwise, it is discarded (superseded).
 3.  **Swap**: The old segment file is atomically replaced by the new, smaller `.clean` file.
+
+
+### Compaction Logic
+
+The cleaner operates in two passes: Build Map and Rewrite.
+
+```rust
+// Pass 1: Build the Offset Map
+let mut offset_map = HashMap::new();
+for record in log.read_all() {
+    offset_map.insert(record.key, record.offset);
+}
+
+// Pass 2: Rewrite Segments
+for segment in segments {
+    let mut new_segment = Segment::create("new.log");
+    for record in segment.read() {
+        // Only keep if this is the LATEST offset for this key
+        if offset_map.get(&record.key) == Some(&record.offset) {
+            new_segment.append(record);
+        }
+    }
+    segment.replace_with(new_segment);
+}
+```
 
 This ensures that for any given key, at least the last known value is always preserved, effectively turning the Log into a persistent Key-Value Store.
