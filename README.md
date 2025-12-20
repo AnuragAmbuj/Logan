@@ -83,6 +83,3 @@ cargo test
 - `logan-client`: Minimal async client client library.
 - `logan-bench`: Performance benchmarking tool.
 - `logan-common`: Shared utilities (logging, errors).
-
-## License
-MIT
